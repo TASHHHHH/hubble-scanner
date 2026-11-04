@@ -1,0 +1,120 @@
+# Adaptive distributed scan
+
+## Backlog levels
+
+The coordinator counts unique unfinished MAST jobs (ready plus running), not
+all historical Wikipedia gaps or catalog aliases. All PCs with adaptive credentials
+can investigate. Each worker runs one task at a time.
+
+| Unfinished candidates | Maximum concurrent investigators |
+| --- | --- |
+| 0 | No investigation work |
+| 1–9 | 1 |
+| 10–19 | 2 |
+| 20–29 | 3 |
+| 30–39 | 4 |
+| 40+ | 5 |
+
+Unused workers check Wikipedia. Active work is never killed when a level falls;
+new MAST claims wait until capacity is available. A slow PC does not block the
+others. Claims and level checks share one SQLite transaction, preventing duplicate
+assignment or concurrent capacity overruns. Expired tasks remain held for review.
+The GUI Workers tab displays backlog and investigator capacity.
+
+## Coordinator setup
+
+Install with `setup.ps1 -AI`, build/import a catalog, seed it and start the local
+coordinator. Select **Issue worker token** once for each PC. New credentials allow
+Wikipedia and MAST investigation only, not quality tasks, administration, or other
+workers' jobs. Old wiki-only credentials stay restricted; reissue them to opt in.
+Each PC should have its own token and workspace.
+
+For outside PCs, run the TLS listener on the SAME local queue.sqlite:
+
+```powershell
+$env:HUBBLE_QUEUE_TOKEN = '<separate random administrator secret, at least 24 characters>'
+.\.venv\Scripts\python.exe secure_coordinator.py --db "$HOME\HubbleScout\queue.sqlite" serve --cert C:\certs\fullchain.pem --key C:\certs\privkey.pem
+```
+
+Use a valid hostname certificate and reachable HTTPS port 8766. Do not expose
+GUI HTTP port 8765, which is localhost-only. Domain routing, certificate issuance
+and firewall changes are deployment-specific and have not been performed here.
+The two listeners share queue state; do not run older coordinator versions against
+it. Stop every old app/worker instance before upgrading.
+
+## Every worker PC
+
+Install AI dependencies (`setup.ps1 -AI`), enter its unique token and
+`https://YOUR-HOST:8766`, then click **Join adaptive pool**. Alternatively:
+
+```powershell
+$env:HUBBLE_QUEUE_TOKEN = '<this PC worker credential>'
+.\.venv\Scripts\python.exe cluster_worker.py --server https://YOUR-HOST:8766 --stages mast wiki --work-dir work\adaptive
+```
+
+The coordinator fills available investigation slots first, then assigns Wikipedia
+jobs. One task must finish before the worker changes roles. The coordinator PC can
+also participate using **Join local pool**. A private CA can be supplied through
+HUBBLE_CA_BUNDLE; TLS verification is never disabled. Worker API tokens are shown
+masked in the GUI and are not saved by the app. Store any externally managed
+worker startup credentials securely; Telegram credentials are a different secret.
+
+MAST investigations require two distinct bands whose common footprint covers the
+target center. Only archive JPEG/PNG previews are downloaded, never science FITS.
+DINOv2 executes on the investigating PC; its diversity score is relative to that
+worker's local preview collection, not a globally comparable novelty score. The
+worker sends observations and the report to the coordinator. Preview files remain
+on the worker. MAST workers wait five seconds after each completed task.
+
+## Encrypted, coordinator-only Telegram
+
+On the coordinator choose **Encrypted Telegram settings** under Workers, and enter
+the bot token and destination chat ID. Or run `python secret_store.py`, which uses
+a hidden token prompt. Settings are stored under the current user's LocalAppData,
+outside this repository, using Windows DPAPI current-user encryption. They are
+never sent to a worker or included in a task payload. Previously documented
+Telegram environment variables are no longer used; remove them from startup scripts.
+
+DPAPI protects the saved file, not a compromised coordinator: software running as
+the same Windows user can decrypt it. Keep the coordinator account trusted.
+Reference: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptprotectdata
+
+Only the coordinator's notification service loads the token. It creates a durable
+outbox entry for each accepted matched MAST job and sends after the investigation
+finishes. Messages use the catalog object and recomputed footprint match, not a
+worker-supplied arbitrary message. Workers' astronomy results still require trust
+and review; access restrictions cannot prove remote evidence is truthful.
+
+The GUI or TLS coordinator must stay running to drain the outbox. Multiple local
+listeners atomically share it. Failed sends are marked `failed`. A crash during
+sending leaves `sending`, meaning delivery is uncertain. Neither is retried
+silently, to avoid duplicate alerts. Without configured encrypted settings, entries
+remain `pending`; the live list and desktop bell still work. Saved credentials do
+not trigger a test message automatically.
+
+## Live list and recovery
+
+The local Live List refreshes every three seconds, showing up to 2,000 recent
+attribution gaps, MAST state, matched filters, processing and delivery status.
+It is a live table and bell, not a Windows push notification service. Publication
+status always remains not assessed. Missing previews and processing failures are
+explicit; they do not establish image quality or novelty.
+
+Revoke a worker from the coordinator:
+
+```powershell
+.\.venv\Scripts\python.exe secure_coordinator.py --db "$HOME\HubbleScout\queue.sqlite" revoke PC-NAME
+```
+
+Reissuing the same name also revokes its old credential. Confirm an expired worker
+has stopped before manually requeueing its held task. Separate databases do not
+coordinate. Install this updated source on every PC, not only the coordinator.
+
+## Validation
+
+68 tests pass on Windows, including real HTTP adaptive assignments (two MAST jobs
+and one Wikipedia fallback at backlog 10), duplicate fencing, draining on scale-down,
+credential roles, centralized idempotent notifications, and actual Windows DPAPI
+round-trip/tamper rejection. DINOv2 was previously run on CPU with a synthetic
+preview. Internet TLS deployment, multiple physical PCs and live Telegram delivery
+still need your deployment configuration and have not been live-tested here.

@@ -1,0 +1,7 @@
+requests>=2.31,<3
+requests-cache>=1.2,<2
+astropy>=6,<8
+astroquery>=0.4.9,<0.5
+Pillow>=10,<13
+numpy>=1.26,<3
+shapely>=2,<3

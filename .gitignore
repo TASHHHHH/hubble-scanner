@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.py[cod]
+.cache/
+out/
+work/
+*.sqlite*
+*.fits
+*.fit
+*.fits.gz
+.env*
+*.log
+*.dpapi
+*.pem
+*.key
+*.pfx
+*.p12

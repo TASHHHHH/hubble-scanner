@@ -1,2 +1,82 @@
-# hubble-scanner
-Windows Hubble archive research app with adaptive distributed scanning, footprint matching, preview ranking and TSDP exports.
+# Hubble Scanner
+
+A Windows desktop workspace for Hubble archive research: catalog searches,
+Wikipedia imagery attribution checks, MAST footprints, FITS quality review,
+optional DINOv2 ranking and an adaptive distributed worker queue.
+
+## Start
+
+Install Python 3.11 with Tcl/Tk, then run:
+
+```powershell
+.\setup.ps1
+.\launch.ps1
+```
+
+Use `setup.ps1 -AI` for optional pretrained DINOv2 dependencies. First ranking also
+downloads model weights. Public-data queries need no paid API key.
+Work is saved in `~/HubbleScout`, outside this repository.
+
+## Desktop workflow
+
+1. Try **Offline demo** first. Its products are synthetic, not download requests.
+2. **Build catalog**, then **Import catalog & seed queue** with its JSONL file.
+3. **Join local pool**. Qualifying Wikipedia results feed MAST investigations.
+4. **Collect results**, then load `results/candidates.jsonl` under Candidates.
+5. Inspect target evidence, export TSDP CSV, or rank available archive previews.
+6. Download chosen science products through TSDP/MAST; select them in FITS review.
+
+Use a separate workspace per catalog/configuration. TSDP export resolves real
+science product URIs for [TSDP Import MAST CSV](https://github.com/TASHHHHH/tash-space-data-preprocessor),
+defaults to ten groups, and reports incomplete groups separately. This app finds
+RGB candidates; it does not perform image reduction or generate final RGB images.
+
+## Multiple PCs
+
+See [Adaptive distributed scan](DISTRIBUTED_SCAN.md). All authorized PCs can switch
+between Wikipedia and MAST/DINOv2 investigations according to backlog levels.
+Ten unfinished candidates allow two investigators, twenty allow three, up to five.
+Other PCs continue Wikipedia scanning. Telegram is sent only by the coordinator,
+whose token is encrypted with Windows current-user DPAPI and never sent to workers.
+Outside PCs require HTTPS and individual revocable credentials. Existing wiki-only
+tokens remain restricted until reissued. Update every PC before starting this mode.
+
+## Research limits
+
+- Messier, NGC and IC through OpenNGC; optional Arp and Sharpless via VizieR;
+  custom catalogs through `scanner.py catalog --extra-csv`.
+- Wikipedia `not_detected` means matching attribution keywords were not found.
+  It is not proof that Hubble imagery is absent.
+- Footprints identify candidate triples. FITS WCS and DQ/ERR/WHT checks add
+  pixel evidence; common coverage is sampled. Review instrument-specific flags.
+- DINOv2 ranks preview diversity, not astronomical novelty. Archive previews
+  are single-band browse images, not constructed RGB composites.
+- Every target retains `publication_status: not_assessed`. Independent verification
+  is required before any publication or discovery claim.
+
+## Development and portfolio
+
+```powershell
+python -m unittest discover -v
+python demo.py --out out/demo
+python cluster_smoke.py --out out/cluster-smoke
+```
+
+Use a fresh smoke output folder each time. Windows CI repeats offline checks;
+hosted CI is not verified until it runs on GitHub. Ten local worker processes
+are not equivalent to validation across ten physical PCs.
+
+Architecture: `app.py` owns the Tkinter UI and background subprocess runner;
+`coordinator.py` owns SQLite/HTTP scheduling; `cluster_worker.py` manages leased
+tasks. `scanner.py`, `footprint_groups.py`, `fits_quality.py` and `ranking.py`
+implement research stages. Long-running work stays off the GUI thread.
+
+Suggested CV description: “Built a Windows astronomy research app integrating
+public catalogs, archive queries, FITS/WCS quality analysis and a resumable LAN
+worker queue, with optional pretrained vision-model ranking and automated tests.”
+
+See [publishing](PUBLISHING.md), [contributing](CONTRIBUTING.md),
+[security](SECURITY.md) and [third-party notices](THIRD_PARTY_NOTICES.md).
+Licensing awaits ownership confirmation and a license choice. Public visibility
+alone does not grant an open-source license. This source release requires Python;
+no signed installer is included.
