@@ -1,8 +1,13 @@
 # Security
 
-The coordinator is a trusted-LAN prototype, not a public multi-tenant service.
-Bearer tokens travel over HTTP without TLS. Restrict access to trusted workers.
-Never publish tokens, personal paths or private datasets in an issue.
-Use isolated environments for untrusted FITS files or coordinator connections.
-Report vulnerabilities privately to the repository owner using GitHub private
-vulnerability reporting if enabled. Do not include secrets in reports.
+Remote workers must connect through the TLS coordinator using individual,
+revocable credentials. The GUI HTTP listener is restricted to localhost.
+Never expose the legacy LAN-only coordinator to the internet.
+
+Telegram credentials are encrypted with Windows current-user DPAPI and remain
+on the coordinator. Processes running as that Windows user can decrypt them;
+keep that account trusted. Workers never receive the Telegram token.
+
+Do not include tokens, private paths, certificates or datasets in public issues.
+Report vulnerabilities privately to the maintainer through GitHub private
+vulnerability reporting when enabled.

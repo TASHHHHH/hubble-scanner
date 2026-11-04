@@ -47,14 +47,15 @@ tokens remain restricted until reissued. Update every PC before starting this mo
   custom catalogs through `scanner.py catalog --extra-csv`.
 - Wikipedia `not_detected` means matching attribution keywords were not found.
   It is not proof that Hubble imagery is absent.
-- Footprints identify candidate triples. FITS WCS and DQ/ERR/WHT checks add
+- Automatic investigation requires two overlapping bands covering the target center.
+  RGB export identifies three-filter groups. FITS WCS and DQ/ERR/WHT checks add
   pixel evidence; common coverage is sampled. Review instrument-specific flags.
 - DINOv2 ranks preview diversity, not astronomical novelty. Archive previews
   are single-band browse images, not constructed RGB composites.
 - Every target retains `publication_status: not_assessed`. Independent verification
   is required before any publication or discovery claim.
 
-## Development and portfolio
+## Development
 
 ```powershell
 python -m unittest discover -v
@@ -62,21 +63,19 @@ python demo.py --out out/demo
 python cluster_smoke.py --out out/cluster-smoke
 ```
 
-Use a fresh smoke output folder each time. Windows CI repeats offline checks;
-hosted CI is not verified until it runs on GitHub. Ten local worker processes
-are not equivalent to validation across ten physical PCs.
+Use a fresh output folder for each cluster smoke test. The Windows workflow runs
+the test suite, offline demo and ten-worker smoke test. See [validation](VALIDATION.md)
+for test scope and deployment limitations.
 
 Architecture: `app.py` owns the Tkinter UI and background subprocess runner;
 `coordinator.py` owns SQLite/HTTP scheduling; `cluster_worker.py` manages leased
 tasks. `scanner.py`, `footprint_groups.py`, `fits_quality.py` and `ranking.py`
 implement research stages. Long-running work stays off the GUI thread.
 
-Suggested CV description: “Built a Windows astronomy research app integrating
-public catalogs, archive queries, FITS/WCS quality analysis and a resumable LAN
-worker queue, with optional pretrained vision-model ranking and automated tests.”
+## Documentation
 
-See [publishing](PUBLISHING.md), [contributing](CONTRIBUTING.md),
-[security](SECURITY.md) and [third-party notices](THIRD_PARTY_NOTICES.md).
-Licensing awaits ownership confirmation and a license choice. Public visibility
-alone does not grant an open-source license. This source release requires Python;
-no signed installer is included.
+- [Distributed setup and worker levels](DISTRIBUTED_SCAN.md)
+- [FITS quality checks and CLI reference](CLUSTER_AND_QUALITY.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security](SECURITY.md)
+- [Third-party notices](THIRD_PARTY_NOTICES.md)
