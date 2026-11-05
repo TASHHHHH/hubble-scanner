@@ -184,15 +184,26 @@ def chunks(items, n):
     for i in range(0, len(items), n): yield items[i:i+n]
 
 
+SKY_TEMPLATES = frozenset('Template:' + name for name in (
+    'Infobox galaxy', 'Infobox galaxy cluster', 'Infobox galaxy group',
+    'Infobox nebula', 'Infobox planetary nebula', 'Infobox supernova remnant',
+    'Infobox open cluster', 'Infobox globular cluster', 'Infobox star cluster',
+    'Infobox astronomical object', 'Starbox begin'))
+
+
 def wiki_images(s, titles, delay):
     # Returns images from the full article, not just the lead image.
     if len(titles) > 50:
         return {k:v for batch in chunks(titles, 50) for k,v in wiki_images(s, batch, delay).items()}
     data_images = {t: None for t in titles}
+    ambiguous = set()
+    sky_titles = set()
     cont = {}
     while True:
         params = {'action': 'query', 'format': 'json', 'formatversion': 2, 'redirects': 1,
-                  'prop': 'images', 'imlimit': 'max', 'titles': '|'.join(titles), **cont}
+                  'prop': 'images|pageprops|templates', 'ppprop': 'disambiguation',
+                  'tltemplates': '|'.join(sorted(SKY_TEMPLATES)), 'tllimit': 'max',
+                  'imlimit': 'max', 'titles': '|'.join(titles), **cont}
         d = get_json(s, WIKI_URL, params, delay)
         redirects = {x['from']: x['to'] for x in d.get('query', {}).get('normalized', [])}
         redirects.update({x['from']: x['to'] for x in d.get('query', {}).get('redirects', [])})
@@ -202,14 +213,19 @@ def wiki_images(s, titles, delay):
             actual = redirects.get(actual, actual)
             p = pages.get(actual)
             if p is None: continue
-            if 'missing' in p or 'invalid' in p:
+            if 'disambiguation' in p.get('pageprops', {}):
+                ambiguous.add(t)
+            if any(item['title'] in SKY_TEMPLATES for item in p.get('templates', [])):
+                sky_titles.add(t)
+            if t in ambiguous or 'missing' in p or 'invalid' in p:
                 data_images[t] = None
                 continue
             if data_images[t] is None: data_images[t] = []
             data_images[t].extend(i['title'] for i in p.get('images', []))
         cont = d.get('continue') or {}
         if not cont: break
-    return data_images
+    return {t: images if t in sky_titles and t not in ambiguous else None
+            for t, images in data_images.items()}
 
 
 def commons_metadata(s, titles, delay):

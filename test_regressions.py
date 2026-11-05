@@ -127,7 +127,7 @@ class WikiTests(unittest.TestCase):
 
     def test_pagination(self):
         responses=[{'query':{'pages':[{'title':'X','images':[{'title':'File:1.jpg'}]}]},'continue':{'imcontinue':'x','continue':'||'}},
-                   {'query':{'pages':[{'title':'X','images':[{'title':'File:2.jpg'}]}]}}]
+                   {'query':{'pages':[{'title':'X','templates':[{'title':'Template:Infobox galaxy'}],'images':[{'title':'File:2.jpg'}]}]}}]
         with patch.object(scanner,'get_json',side_effect=responses):
             self.assertEqual(len(scanner.wiki_images(None,['X'],0)['X']),2)
 

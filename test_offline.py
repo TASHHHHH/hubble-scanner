@@ -29,12 +29,25 @@ class CatalogUnitTests(unittest.TestCase):
     def test_wikipedia_page_image_detection(self):
         with patch.object(scanner, 'get_json') as fn:
             fn.return_value = {'query': {'redirects': [{'from':'Messier 31','to':'Andromeda Galaxy'}],
-                                         'pages': [{'title':'Andromeda Galaxy', 'images': [{'title':'File:Andromeda galaxy Hubble.jpg'}]}]}}
+                                         'pages': [{'title':'Andromeda Galaxy', 'templates':[{'title':'Template:Infobox galaxy'}], 'images': [{'title':'File:Andromeda galaxy Hubble.jpg'}]}]}}
             found = scanner.wiki_images(None, ['Messier 31'], 0)
             self.assertIn('File:Andromeda galaxy Hubble.jpg', found['Messier 31'])
 
 
 class UpgradeTests(unittest.TestCase):
+    def test_disambiguation_page_cannot_supply_image_evidence(self):
+        pages = [{'title':'H21', 'pageprops':{'disambiguation':''},
+                  'images':[{'title':'File:Hubble.jpg'}]},
+                 {'title':'HMS H21', 'templates':[{'title':'Template:Infobox ship'}],
+                  'images':[{'title':'File:Hubble.jpg'}]},
+                 {'title':'Double Cluster', 'templates':[{'title':'Template:Infobox open cluster'}], 'images':[]}]
+        with patch.object(scanner, 'get_json', return_value={'query':{'pages':pages}}) as api:
+            found = scanner.wiki_images(None, ['H21', 'HMS H21', 'Double Cluster'], 0)
+        self.assertEqual(api.call_args.args[2]['ppprop'], 'disambiguation')
+        self.assertIsNone(found['H21'])
+        self.assertIsNone(found['HMS H21'])
+        self.assertEqual(found['Double Cluster'], [])
+
     def test_current_openngc_csv_comma_delimiter(self):
         sample='Name,Type,RA,Dec,MajAx,M\nIC0001,G,00:08:27.0,+27:43:03,1.2,\n'
         self.assertEqual(scanner.read_ngc_csv(sample)[0]['Name'],'IC0001')
