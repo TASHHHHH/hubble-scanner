@@ -127,7 +127,8 @@ def scan(objects,out,cache_dir,observations_file=None):
     if observations_file:
         observations=[r for r in __import__('runtime').read_rows(observations_file)]
     else: observations=fetch_archive(cache_dir)
-    observations=[r for r in observations if r.get('s_region') and r.get('s_ra') and r.get('s_dec')]
+    observations=[r for r in observations if r.get('s_region') and
+                  r.get('s_ra') not in (None,'') and r.get('s_dec') not in (None,'')]
     ra=np.array([float(r['s_ra']) for r in observations]);dec=np.array([float(r['s_dec']) for r in observations])
     coords=SkyCoord(ra*u.deg,dec*u.deg)
     xyz=np.column_stack((np.cos(coords.dec.rad)*np.cos(coords.ra.rad),

@@ -173,7 +173,8 @@ class Queue:
                 if row['stage']=='archive_band':
                     payload=json.loads(row['payload']);lo=payload['ra_min'];hi=payload['ra_max']
                     if result.get('status')!='ok' or result.get('ra_min')!=lo or result.get('ra_max')!=hi or not isinstance(result.get('observations'),list):error='Invalid archive band result'
-                    elif any(not isinstance(o,dict) or not o.get('s_ra') or not (lo<=float(o['s_ra'])<hi) for o in result['observations']):error='Observation outside assigned RA band'
+                    elif any(not isinstance(o,dict) or o.get('s_ra') in (None,'') or
+                             not (lo<=float(o['s_ra'])<hi) for o in result['observations']):error='Observation outside assigned RA band'
                 if row['stage']=='quality' and result.get('errors'):error='FITS quality errors; inspect worker output'
             if error is not None:
                 state='failed' if row['attempts']>=self.max_attempts else 'ready'

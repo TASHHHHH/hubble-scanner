@@ -107,6 +107,18 @@ class UpgradeTests(unittest.TestCase):
         self.assertEqual(len(observation_rows),1)
         self.assertEqual(observation_rows[0]['obsid'],'42')
 
+    def test_all_sky_crossmatch_keeps_zero_ra_and_declination(self):
+        from archive_sweep import scan
+        target={'id':'SC-zero','ra_deg':0,'dec_deg':0,'major_arcmin':1,
+                'wiki_titles':['Zero Coordinate Object']}
+        observation={'target_name':'Zero Coordinate Object','obsid':'zero','s_ra':'0','s_dec':'0',
+                     'proposal_id':'10152','filters':'F606W',
+                     's_region':'POLYGON ICRS 359.9 -0.1 0.1 -0.1 0.1 0.1 359.9 0.1'}
+        with tempfile.TemporaryDirectory() as tmp, patch('archive_sweep.fetch_archive',return_value=[observation]), \
+             patch('archive_sweep.fetch_papers',return_value=[]):
+            rows=scan([target],Path(tmp)/'results.jsonl',Path(tmp)/'cache')
+        self.assertEqual(rows[0]['mast_observation_count'],1)
+
     def test_papertrack_fetch_uses_program_filter_and_persistent_cache(self):
         from archive_sweep import fetch_papers
         from unittest.mock import Mock
