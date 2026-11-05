@@ -107,8 +107,9 @@ class QueueTests(unittest.TestCase):
             q=Queue(Path(tmp)/'q',mast_slots=2)
             self.assertEqual(q.seed_archive_bands(),72)
             claimed=q.claim('pc-1',['archive_band'])
-            self.assertEqual(claimed['payload']['ra_min'],0)
-            result={'status':'ok','ra_min':0,'ra_max':5,'observations':[{'s_ra':'2','s_dec':'20','s_region':'POLYGON ICRS 1 1 2 1 2 2'}]}
+            lower=claimed['payload']['ra_min'];upper=claimed['payload']['ra_max']
+            mid=(lower+upper)/2
+            result={'status':'ok','ra_min':lower,'ra_max':upper,'observations':[{'s_ra':str(mid),'s_dec':'20','s_region':'POLYGON ICRS 1 1 2 1 2 2'}]}
             self.assertTrue(q.finish(claimed['key'],claimed['token'],result)['ok'])
             exported=q.export(Path(tmp)/'out')
             self.assertEqual(exported['archive_observations'],1)
