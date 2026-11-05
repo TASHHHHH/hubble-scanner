@@ -87,7 +87,9 @@ class Queue:
                 done=c.execute('SELECT result FROM jobs WHERE key=? AND state=\'done\'',(wiki_key,)).fetchone()
                 if done:self.enqueue_mast(c,wiki_key,json.loads(done['result']))
     def enqueue_mast(self,c,wiki_key,result):
-        if result.get('wiki_status')!='not_detected':return
+        if result.get('wiki_status')!='not_detected' and not (
+            result.get('wiki_status')=='no_article' and result.get('catalog_verified')
+        ):return
         config=json.loads(c.execute("SELECT value FROM settings WHERE key='scan'").fetchone()['value'])
         for target in c.execute('SELECT id,object FROM targets WHERE wiki_key=?',(wiki_key,)).fetchall():
             o=json.loads(target['object']);rad=radius(o,config['max_radius'])
@@ -153,7 +155,7 @@ class Queue:
                     pair,_=match_pair({**obj,'observations':result.get('observations',[])})
                     if pair:
                         inv=result['investigation']
-                        message=f"Hubble candidate: {obj['id']}\nBands: {', '.join(pair['filters'])}\nFootprint overlap: {pair['overlap_fraction']:.0%}\nProcessing: {str(inv.get('status','unknown'))[:80]}\nNo Hubble attribution detected on Wikipedia. Publication status: not assessed."
+                        message=f"Hubble candidate: {obj['id']}\nBands: {', '.join(pair['filters'])}\nFootprint overlap: {pair['overlap_fraction']:.0%}\nProcessing: {str(inv.get('status','unknown'))[:80]}\nWikipedia status: {result.get('wiki_status')}. Publication status: not assessed."
                         if inv.get('ranking'):message+='\nDINOv2 worker-local diversity: '+str(inv['ranking'].get('visual_diversity','unknown'))[:30]+' (not novelty)'
                         c.execute('INSERT OR IGNORE INTO notifications(job_key,message) VALUES(?,?)',(job_key,message))
         return {'ok':True}
@@ -216,8 +218,8 @@ class Queue:
                     'targets':c.execute('SELECT count(*) FROM targets').fetchone()[0]}
     def candidates(self):
         with self.db() as c:
-            rows=c.execute("SELECT t.id,t.object,m.state,m.result,m.error,(SELECT state FROM notifications n WHERE n.job_key=m.key) AS delivery FROM targets t JOIN jobs w ON w.key=t.wiki_key LEFT JOIN jobs m ON m.key=t.mast_key WHERE w.state='done' AND json_extract(w.result,'$.wiki_status')='not_detected' ORDER BY w.updated DESC LIMIT 2000").fetchall()
-            return [{**json.loads(r['object']),'wiki_status':'not_detected','mast_state':r['state'],
+            rows=c.execute("SELECT t.id,t.object,m.state,m.result,m.error,(SELECT state FROM notifications n WHERE n.job_key=m.key) AS delivery,w.result AS wiki_result FROM targets t JOIN jobs w ON w.key=t.wiki_key LEFT JOIN jobs m ON m.key=t.mast_key WHERE w.state='done' AND (json_extract(w.result,'$.wiki_status')='not_detected' OR (json_extract(w.result,'$.wiki_status')='no_article' AND json_extract(w.result,'$.catalog_verified')=1)) ORDER BY w.updated DESC LIMIT 2000").fetchall()
+            return [{**json.loads(r['object']),**json.loads(r['wiki_result']),'mast_state':r['state'],
                      'investigation':{**json.loads(r['result']).get('investigation',{}),'notification':r['delivery'] or 'not_queued'} if r['result'] else {},'error':r['error']} for r in rows]
 
     def worker_token(self,name,role='wiki'):

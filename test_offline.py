@@ -35,6 +35,24 @@ class CatalogUnitTests(unittest.TestCase):
 
 
 class UpgradeTests(unittest.TestCase):
+    def test_wide_catalog_joins_canonical_ngc_and_keeps_herbig_haro_aliases(self):
+        import csv
+        from catalogs import add_wide_catalogs
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'snapshot.csv'
+            with path.open('w',encoding='utf-8',newline='') as f:
+                writer=csv.writer(f);writer.writerow(('family','number','oid','main_id','ra_deg','dec_deg'))
+                writer.writerow(('HH','1','1','HH 1','84.08','-6.75'))
+                writer.writerow(('HH','1A','1','HH 1','84.08','-6.75'))
+                writer.writerow(('Arp','1','2','NGC 224','10','20'))
+            base={'id':'NGC0224','ra_deg':10,'dec_deg':20,'wiki_titles':['NGC 224'],'aliases':[]}
+            rows=[base]
+            add_wide_catalogs(rows,path)
+            self.assertEqual(len(rows),2)
+            self.assertEqual(rows[0]['wiki_titles'],['NGC 224','Arp 1'])
+            self.assertIn('Herbig-Haro 1A',rows[1]['wiki_titles'])
+            self.assertEqual(rows[1]['simbad_oid'],'1')
+
     def test_disambiguation_page_cannot_supply_image_evidence(self):
         pages = [{'title':'H21', 'pageprops':{'disambiguation':''},
                   'images':[{'title':'File:Hubble.jpg'}]},

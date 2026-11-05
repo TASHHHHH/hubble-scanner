@@ -79,7 +79,7 @@ def export(results, groups, out, limit=10):
         if limit and index >= limit: break
         try:
             item = items[group['id']]
-            if item.get('wiki_status') != 'not_detected': continue
+            if item.get('wiki_status') not in ('not_detected','no_article'): continue
             for row in product_rows(item, group, index):
                 key = (row['scanner_group'],row['rgb_channel'],row['dataURI'])
                 if key not in seen: rows.append(row); seen.add(key)

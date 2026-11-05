@@ -150,6 +150,9 @@ def catalog(args):
                          'major_arcmin':maj,'wiki_titles':titles,'source':src,'aliases':aliases})
     if args.with_vizier:
         rows.extend(extra_vizier_catalogs())
+    if getattr(args, 'wide', False):
+        from catalogs import add_wide_catalogs
+        add_wide_catalogs(rows)
     for path in args.extra_csv or []:
         rows.extend(load_extra_csv(path))
     # Catalog designations remain separate where scientifically ambiguous; aliases preserved.
@@ -286,6 +289,7 @@ def wiki(args):
                           'incomplete' if any(n not in meta and not HST_RE.search(n) for n in imgs) else
                           'not_detected')
                 results.append({'id': obj['id'], 'wiki_status': status,
+                                'catalog_verified': bool(obj.get('simbad_oid')),
                                 'hubble_evidence': evidence[:12], 'wiki_images': len(imgs),
                                 'wiki_titles_checked': obj['wiki_titles'], 'checked_at_unix':time.time(),
                                 'publication_status':'not_assessed'})
@@ -316,7 +320,8 @@ def mast(args):
     import astropy.units as u
     wikimap = merge_glob(args.wiki_glob)
     objs = [o for o in read_jsonl(args.catalog)
-            if o['id'] in wikimap and wikimap[o['id']]['wiki_status'] == 'not_detected']
+            if o['id'] in wikimap and (wikimap[o['id']]['wiki_status'] == 'not_detected'
+                or (wikimap[o['id']]['wiki_status']=='no_article' and o.get('simbad_oid')))]
     objs = shard(objs, args.worker, args.workers, args.limit)
     previous = {x['id'] for x in read_jsonl(args.out) if x.get('status') == 'ok'} if Path(args.out).exists() else set()
     print(f'MAST worker {args.worker}/{args.workers}: {len(objs)} assigned')
@@ -415,7 +420,7 @@ def previews(args):
     from PIL import Image
     items = [x for x in read_jsonl(args.results)
              if x.get('status') == 'ok' and x.get('observation_count', 0) > 0 and
-             x.get('wiki_status') == 'not_detected' and x.get('rgb_group_count',0) > 0][:args.limit]
+             x.get('wiki_status') in ('not_detected','no_article') and x.get('rgb_group_count',0) > 0][:args.limit]
     outdir = Path(args.out); outdir.mkdir(parents=True, exist_ok=True)
     for item in items:
         target = outdir / (item['id'] + '.jpg')
@@ -456,7 +461,11 @@ def ai_rank(args):
 def main():
     p = argparse.ArgumentParser(description='Hubble Wikipedia first-pass catalog / footprint scanner')
     sub = p.add_subparsers(dest='command', required=True)
-    a = sub.add_parser('catalog'); a.add_argument('--ngc-csv'); a.add_argument('--addendum-csv'); a.add_argument('--with-vizier', action='store_true', help='Add Arp and Sharpless 2 catalogs via VizieR'); a.add_argument('--extra-csv', action='append', help='Additional catalog with ICRS ra_deg/dec_deg'); a.add_argument('--out', default='out/catalog.jsonl'); a.set_defaults(func=catalog)
+    a = sub.add_parser('catalog'); a.add_argument('--ngc-csv'); a.add_argument('--addendum-csv')
+    extension = a.add_mutually_exclusive_group()
+    extension.add_argument('--wide', action='store_true', help='Add the bundled SIMBAD designations, including Herbig-Haro objects')
+    extension.add_argument('--with-vizier', action='store_true', help='Add Arp and Sharpless 2 catalogs via VizieR')
+    a.add_argument('--extra-csv', action='append', help='Additional catalog with ICRS ra_deg/dec_deg'); a.add_argument('--out', default='out/catalog.jsonl'); a.set_defaults(func=catalog)
     a = sub.add_parser('wiki'); a.add_argument('--catalog', default='out/catalog.jsonl'); a.add_argument('--out', required=True)
     a.add_argument('--worker', type=int, default=0); a.add_argument('--workers', type=int, default=1)
     a.add_argument('--limit', type=int, default=0); a.add_argument('--batch-size', type=int, default=8)

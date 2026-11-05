@@ -22,6 +22,7 @@ CloseApplications=yes
 Name: "ai"; Description: "Install AI dependencies for adaptive worker PCs (large download)"; Flags: unchecked
 
 [Files]
+Source: "..\catalog_data\simbad-identifiers.csv"; DestDir: "{app}\catalog_data"; Flags: ignoreversion
 Source: "..\*.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\requirements*.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\*.md"; DestDir: "{app}"; Flags: ignoreversion

@@ -141,15 +141,15 @@ class App(tk.Tk):
         f = self.tab('Scan', 'Catalog scan', 'Load a catalog, run the queue, then collect candidates for review.')
         for title, description, callback in [
             ('Try offline demo', 'Synthetic catalog, three FITS bands and sample results. No API calls.', self.demo),
-            ('Build catalog', 'Download OpenNGC / Messier / IC; optional Arp and Sharpless via VizieR.', self.catalog),
+            ('Build catalog', 'Build the Messier, NGC and IC input list with the selected catalog coverage.', self.catalog),
             ('Import catalog & seed queue', 'Choose JSONL from a previous run. Known aliases and identical queries are deduplicated.', self.seed),
             ('Join local pool', 'Scan Wikipedia or investigate candidates according to the backlog level.', self.local_scan),
             ('Collect results', 'Snapshot the queue, compute overlapping filter triples and write CSV files.', self.collect)]:
             row = ttk.Frame(f); row.pack(fill='x', pady=5)
             ttk.Button(row, text=title, width=28, command=callback).pack(side='left')
             ttk.Label(row, text=description, wraplength=650).pack(side='left', padx=18)
-        self.vizier = tk.BooleanVar(value=False)
-        ttk.Checkbutton(f, text='Include Arp and Sharpless (remote VizieR service may be slow)', variable=self.vizier).pack(anchor='w', pady=8)
+        self.wide = tk.BooleanVar(value=True)
+        ttk.Checkbutton(f, text='Expanded catalogs (HH, Barnard, Lynds, Arp, Sharpless, clusters and more)', variable=self.wide).pack(anchor='w', pady=8)
 
     def results_tab(self):
         f = self.tab('Candidates', 'Candidates', 'Double-click a target to view its evidence. Publication status is not assessed.')
@@ -261,7 +261,7 @@ class App(tk.Tk):
         except Exception as exc: messagebox.showerror('Cannot start', str(exc))
 
     def demo(self): self.run([command('demo', '--out', self.workspace_path() / 'demo')])
-    def catalog(self): self.run([command('scanner', 'catalog', '--out', self.workspace_path() / 'catalog.jsonl', *(['--with-vizier'] if self.vizier.get() else []))])
+    def catalog(self): self.run([command('scanner', 'catalog', '--out', self.workspace_path() / 'catalog.jsonl', *(['--wide'] if self.wide.get() else []))])
     def seed(self):
         path = filedialog.askopenfilename(title='Select catalog JSONL', filetypes=[('JSON Lines', '*.jsonl')])
         if path: self.run([command('coordinator', '--db', self.workspace_path() / 'queue.sqlite', 'seed', '--catalog', path)])

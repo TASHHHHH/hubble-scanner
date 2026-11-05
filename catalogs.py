@@ -1,5 +1,8 @@
 """Explicit catalog schemas; all output coordinates are ICRS degrees."""
 import os
+import csv
+import re
+from pathlib import Path
 from astropy.coordinates import SkyCoord, FK4, FK5
 from astropy.time import Time
 import astropy.units as u
@@ -44,7 +47,11 @@ def convert_builtin(row, tag):
 def builtin_catalogs():
     rows=[]
     for catalog,tag in [('VII/192/arpord','arp'),('VII/20/catalog','sh2')]:
-        raw=vizier_rows(catalog)
+        try:
+            raw=vizier_rows(catalog)
+        except Exception as exc:
+            print(f'WARNING: skipped optional VizieR source {catalog}: {exc}', flush=True)
+            continue
         converted=[]
         for i,row in enumerate(raw):
             try:converted.append(convert_builtin(row,tag))
@@ -52,3 +59,33 @@ def builtin_catalogs():
         print(f'Loaded {tag}: {len(converted)} rows')
         rows.extend(converted)
     return rows
+
+
+def add_wide_catalogs(rows, snapshot=None):
+    """Join by SIMBAD identity or an exact main NGC/IC designation, never proximity."""
+    path = snapshot or Path(__file__).with_name('catalog_data') / 'simbad-identifiers.csv'
+    by_designation = {r['id']:r for r in rows}
+    by_oid = {}
+    with Path(path).open(encoding='utf-8', newline='') as f:
+        for record in csv.DictReader(f):
+            family, number = record['family'], record['number']
+            title = f'Sh2-{number}' if family == 'Sh2' else f'{family} {number}'
+            oid = record['oid']
+            row = by_oid.get(oid)
+            if row is None:
+                main = re.fullmatch(r'(NGC|IC)\s*(\d+)([A-Za-z]?)', record['main_id'], re.I)
+                if main:
+                    row = by_designation.get(f'{main[1].upper()}{int(main[2]):04d}{main[3].upper()}')
+                if row is None:
+                    row = dict(id=title, ra_deg=float(record['ra_deg']), dec_deg=float(record['dec_deg']),
+                               source='simbad', object_type='', major_arcmin=0, wiki_titles=[], aliases=[],
+                               ngc='', ic='', messier='')
+                    rows.append(row)
+                by_oid[oid] = row
+            row['simbad_oid'] = oid
+            for name in [title] + ([f'Herbig-Haro {number}', f'Herbig–Haro {number}'] if family=='HH' else []):
+                if name not in row['wiki_titles']:
+                    row['wiki_titles'].append(name)
+            if title != row['id'] and title not in row['aliases']:
+                row['aliases'].append(title)
+    print(f'Loaded {len(by_oid)} distinct SIMBAD objects from the expanded catalog snapshot.', flush=True)
