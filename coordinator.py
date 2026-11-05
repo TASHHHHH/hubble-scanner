@@ -34,7 +34,7 @@ class Queue:
         if lease_seconds<3 or max_attempts<1 or min(wiki_slots,mast_slots)<1:raise ValueError('Invalid coordinator limits')
         self.path=str(Path(path).resolve());Path(self.path).parent.mkdir(parents=True,exist_ok=True)
         self.lease_seconds=lease_seconds;self.max_attempts=max_attempts
-        self.slots={'wiki':wiki_slots,'mast':mast_slots,'quality':10}
+        self.slots={'wiki':wiki_slots,'mast':mast_slots,'archive_review':mast_slots,'quality':10}
         with self.db() as c:
             c.executescript('''CREATE TABLE IF NOT EXISTS jobs (
                 key TEXT PRIMARY KEY, stage TEXT NOT NULL, payload TEXT NOT NULL,
@@ -105,6 +105,24 @@ class Queue:
         payload={'files':files,'options':options,'fingerprints':fingerprints}
         with self.db() as c:
             self.add(c,key('quality',{'hashes':sorted(fingerprints.values()),'options':options,'schema':SCHEMA}),'quality',payload)
+
+    def seed_archive_review(self,rows,max_radius=12,max_obs=0):
+        queued=0
+        with self.db() as c:
+            c.execute('BEGIN IMMEDIATE')
+            for row in rows:
+                if not row.get('mast_observation_count') or row.get('publication_status') not in (
+                    'no_published_science_paper_found_for_programs','program_id_missing'):
+                    continue
+                keep=('id','ra_deg','dec_deg','major_arcmin','wiki_titles','aliases','object_type',
+                      'source','source_name','source_url','source_license','publication_status',
+                      'mast_program_ids','mast_filters','mast_search_url')
+                obj={k:row[k] for k in keep if k in row}
+                if not obj.get('id') or not obj.get('wiki_titles'):continue
+                payload={'object':obj,'max_radius':max_radius,'max_obs':max_obs,'investigate':True}
+                self.add(c,key('archive_review',{'object':obj,'schema':SCHEMA}),'archive_review',payload)
+                queued+=1
+        return queued
     def claim(self,worker,stages=None):
         stages=stages or ['wiki','mast','quality']
         if not worker or len(worker)>200 or any(s not in self.slots for s in stages):raise ValueError('Invalid worker/stages')
@@ -112,15 +130,18 @@ class Queue:
             c.execute('BEGIN IMMEDIATE');self.expire(c)
             if c.execute("SELECT 1 FROM jobs WHERE owner=? AND state='running'",(worker,)).fetchone():return None
             for stage in stages:
-                active=c.execute("SELECT count(*) FROM jobs WHERE stage=? AND state='running'",(stage,)).fetchone()[0]
-                capacity=self.level(c)['investigators'] if stage=='mast' else self.slots[stage]
+                if stage in ('mast','archive_review'):
+                    active=c.execute("SELECT count(*) FROM jobs WHERE stage IN ('mast','archive_review') AND state='running'").fetchone()[0]
+                else:
+                    active=c.execute("SELECT count(*) FROM jobs WHERE stage=? AND state='running'",(stage,)).fetchone()[0]
+                capacity=self.level(c)['investigators'] if stage in ('mast','archive_review') else self.slots[stage]
                 if active>=capacity:continue
                 job=c.execute("SELECT * FROM jobs WHERE stage=? AND state='ready' AND available<=? ORDER BY updated,key LIMIT 1",(stage,time.time())).fetchone()
                 if not job:continue
                 token=secrets.token_urlsafe(32);deadline=time.time()+self.lease_seconds
                 c.execute("UPDATE jobs SET state='running',owner=?,token=?,lease_until=?,attempts=attempts+1,updated=? WHERE key=?",(worker,token,deadline,time.time(),job['key']))
                 payload=json.loads(job['payload'])
-                if stage=='mast' and self.level(c)['enabled']:payload['investigate']=True
+                if stage in ('mast','archive_review') and self.level(c)['enabled']:payload['investigate']=True
                 return {'key':job['key'],'stage':stage,'payload':payload,'token':token,'lease_seconds':self.lease_seconds}
         return None
     def heartbeat(self,job_key,token):
@@ -140,7 +161,7 @@ class Queue:
                 if not isinstance(result,dict):raise ValueError('Result must be an object')
                 if row['stage']=='wiki' and result.get('wiki_status') not in ('not_detected','hubble_detected','no_article'):
                     error='Incomplete Wikipedia scan; retry required'
-                if row['stage']=='mast' and result.get('status')!='ok':error='MAST search failed'
+                if row['stage'] in ('mast','archive_review') and result.get('status')!='ok':error='MAST search failed'
                 if row['stage']=='quality' and result.get('errors'):error='FITS quality errors; inspect worker output'
             if error is not None:
                 state='failed' if row['attempts']>=self.max_attempts else 'ready'
@@ -166,7 +187,7 @@ class Queue:
 
     def level(self,c):
         config=c.execute("SELECT value FROM settings WHERE key='levels'").fetchone()
-        backlog=c.execute("SELECT count(*) FROM jobs WHERE stage='mast' AND state IN ('ready','running')").fetchone()[0]
+        backlog=c.execute("SELECT count(*) FROM jobs WHERE stage IN ('mast','archive_review') AND state IN ('ready','running')").fetchone()[0]
         if not config:return {'enabled':False,'backlog':backlog,'investigators':self.slots['mast']}
         config=json.loads(config['value'])
         return {'enabled':True,'backlog':backlog,'investigators':min(config['maximum'],1+backlog//config['step']),**config}
@@ -244,7 +265,7 @@ class Queue:
     def worker_stages(self,name):
         with self.db() as c:
             row=c.execute('SELECT role FROM worker_permissions WHERE name=?',(name,)).fetchone()
-            return ['mast','wiki'] if row and row['role']=='adaptive' else ['wiki']
+            return ['archive_review','mast','wiki'] if row and row['role']=='adaptive' else ['wiki']
     def export(self,out):
         out=Path(out);out.mkdir(parents=True,exist_ok=True)
         with self.db() as c:
@@ -260,9 +281,16 @@ class Queue:
                 if t['mast_key'] in done:mast.append({**done[t['mast_key']],'id':o['id'],'coordinator_key':t['mast_key'],
                     'search_radius_capped':float(o.get('major_arcmin') or 2)/2>config['max_radius']})
             quality=[{'key':k,'result':v} for k,v in done.items() if k.startswith('quality:')]
+            archive_reviews=[]
+            for job in c.execute("SELECT payload,result FROM jobs WHERE stage='archive_review' AND state='done'"):
+                payload=json.loads(job['payload']);result=json.loads(job['result'])
+                archive_reviews.append({**payload['object'],**result,
+                    'publication_status':payload['object'].get('publication_status')})
         write_rows(out/'catalog.jsonl',catalog);write_rows(out/'wiki_coordinator.jsonl',wiki);write_rows(out/'mast_coordinator.jsonl',mast)
-        write_rows(out/'quality_results.jsonl',quality);atomic_json(out/'queue_status.json',self.status())
-        return {'targets':len(catalog),'wiki_completed':len(wiki),'mast_completed':len(mast),'quality_completed':len(quality)}
+        write_rows(out/'quality_results.jsonl',quality);write_rows(out/'archive_review_results.jsonl',archive_reviews)
+        atomic_json(out/'queue_status.json',self.status())
+        return {'targets':len(catalog),'wiki_completed':len(wiki),'mast_completed':len(mast),
+                'quality_completed':len(quality),'archive_review_completed':len(archive_reviews)}
 
 def make_server(queue,host,port,secret,restricted=False):
     if len(secret)<24:raise ValueError('Set HUBBLE_QUEUE_TOKEN to a random token of at least 24 characters')
@@ -310,7 +338,9 @@ def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--db',default='out/queue.sqlite')
     sub=p.add_subparsers(dest='command',required=True)
     a=sub.add_parser('seed');a.add_argument('--catalog',required=True);a.add_argument('--max-radius',type=float,default=12);a.add_argument('--max-obs',type=int,default=0)
+    a=sub.add_parser('archive-review-seed');a.add_argument('--results',required=True)
     a=sub.add_parser('quality');a.add_argument('files',nargs='+')
+    a=sub.add_parser('archive-review-seed');a.add_argument('--results',required=True)
     a=sub.add_parser('import-results');a.add_argument('--catalog',required=True);a.add_argument('--wiki-glob',required=True);a.add_argument('--mast-glob',required=True)
     a=sub.add_parser('serve');a.add_argument('--host',default='127.0.0.1');a.add_argument('--port',type=int,default=8765)
     a.add_argument('--lease-seconds',type=int,default=90);a.add_argument('--mast-slots',type=int,default=4)
@@ -319,6 +349,8 @@ def main():
     a=sub.add_parser('requeue');a.add_argument('--key',required=True);a.add_argument('--confirm-worker-stopped',action='store_true')
     args=p.parse_args();q=Queue(args.db,getattr(args,'lease_seconds',90),mast_slots=getattr(args,'mast_slots',4))
     if args.command=='seed':q.seed(list(read_rows(args.catalog)),args.max_radius,args.max_obs);print(encoded(q.status()))
+    elif args.command=='archive-review-seed':print(q.seed_archive_review(list(read_rows(args.results))))
+    elif args.command=='archive-review-seed':print(q.seed_archive_review(list(read_rows(args.results))))
     elif args.command=='quality':q.seed_quality('',args.files);print(encoded(q.status()))
     elif args.command=='import-results':
         from scanner import merge_glob

@@ -113,6 +113,24 @@ class QueueTests(unittest.TestCase):
         self.assertEqual(result,{'wiki':1,'mast':1});self.assertIsNone(self.q.claim('PC'))
         self.assertEqual(self.q.import_results([o],[wiki],[mast]),{'wiki':0,'mast':0})
 
+    def test_archive_review_candidates_are_queued_for_adaptive_workers(self):
+        row={**target(),'mast_observation_count':3,'mast_obsids':['1','2','3'],
+             'mast_filters':['F606W','F814W'],'mast_program_ids':['10152'],
+             'publication_status':'no_published_science_paper_found_for_programs'}
+        self.assertEqual(self.q.seed_archive_review([row]),1)
+        job=self.q.claim('PC',['archive_review'])
+        self.assertEqual(job['stage'],'archive_review')
+        self.assertEqual(job['payload']['object']['publication_status'],
+                         'no_published_science_paper_found_for_programs')
+        self.assertNotIn('mast_obsids',job['payload']['object'])
+        self.q.finish(job['key'],job['token'],{'status':'ok','observations':[],
+            'investigation':{'status':'missing_preview'}})
+        result=self.q.export(self.root/'out')
+        self.assertEqual(result['archive_review_completed'],1)
+        from runtime import read_rows
+        rows=list(read_rows(self.root/'out'/'archive_review_results.jsonl'))
+        self.assertEqual(rows[0]['publication_status'],'no_published_science_paper_found_for_programs')
+
     def test_import_mismatch_rolls_back(self):
         o=target();self.q.seed([o])
         wiki={'id':o['id'],'wiki_status':'not_detected','wiki_titles_checked':['other'],'checked_at_unix':time.time()}

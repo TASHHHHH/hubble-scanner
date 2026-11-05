@@ -143,6 +143,7 @@ class App(tk.Tk):
             ('Try offline demo', 'Synthetic catalog, three FITS bands and sample results. No API calls.', self.demo),
             ('Build catalog', 'Build the Messier, NGC and IC input list with the selected catalog coverage.', self.catalog),
             ('Search SpaceCatalog in MAST', 'Match public Hubble images and check linked STScI papers by proposal; review object-level matches.', self.archive_sweep),
+            ('Queue no-paper targets for PC review', 'Send archive matches with no linked science paper to connected PCs for preview and filter review.', self.archive_review_queue),
             ('Import catalog & seed queue', 'Choose JSONL from a previous run. Known aliases and identical queries are deduplicated.', self.seed),
             ('Join local pool', 'Scan Wikipedia or investigate candidates according to the backlog level.', self.local_scan),
             ('Collect results', 'Snapshot the queue, compute overlapping filter triples and write CSV files.', self.collect)]:
@@ -267,6 +268,12 @@ class App(tk.Tk):
         root=self.workspace_path()
         self.run([command('archive_sweep','--out',root/'results'/'spacecatalog_hst.jsonl',
                           '--cache',root/'.cache'/'spacecatalog-hst')])
+    def archive_review_queue(self):
+        root=self.workspace_path();result=root/'results'/'spacecatalog_hst.jsonl'
+        if not result.exists():
+            messagebox.showinfo('Archive scan required','Run Search SpaceCatalog in MAST first.');return
+        self.run([command('coordinator','--db',root/'queue.sqlite','archive-review-seed',
+                          '--results',result)])
     def seed(self):
         path = filedialog.askopenfilename(title='Select catalog JSONL', filetypes=[('JSON Lines', '*.jsonl')])
         if path: self.run([command('coordinator', '--db', self.workspace_path() / 'queue.sqlite', 'seed', '--catalog', path)])
@@ -330,7 +337,7 @@ class App(tk.Tk):
         if not path: return
         try:
             url, token, ca = read_invite(path, self.workspace_path())
-            self.run([command('cluster_worker', '--server', url, '--stages', 'mast', 'wiki',
+            self.run([command('cluster_worker', '--server', url, '--stages', 'archive_review', 'mast', 'wiki',
                               '--work-dir', self.workspace_path() / 'worker')],
                      worker_token=token, ca_bundle=ca)
         except Exception as exc:
@@ -350,10 +357,10 @@ class App(tk.Tk):
         url=self.endpoint.get().strip();parsed=urlparse(url)
         if parsed.scheme!='https' and parsed.hostname not in ('localhost','127.0.0.1'):
             messagebox.showerror('HTTPS required','Remote workers must connect over HTTPS.');return
-        self.run([command('cluster_worker', '--server', url, '--stages','mast','wiki','--work-dir', self.workspace_path() / 'worker')])
+        self.run([command('cluster_worker', '--server', url, '--stages','archive_review','mast','wiki','--work-dir', self.workspace_path() / 'worker')])
     def local_scan(self):
         if self.start_server():
-            self.run([command('cluster_worker', '--server', 'http://127.0.0.1:8765','--stages','mast','wiki', '--work-dir', self.workspace_path() / 'investigator-worker')],investigator=True)
+            self.run([command('cluster_worker', '--server', 'http://127.0.0.1:8765','--stages','archive_review','mast','wiki', '--work-dir', self.workspace_path() / 'investigator-worker')],investigator=True)
     def status(self):
         self.run([command('app_status', '--server', self.endpoint.get().strip())])
     def collect(self):

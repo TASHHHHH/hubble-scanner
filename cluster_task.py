@@ -24,7 +24,7 @@ def execute(job,folder):
     args=SimpleNamespace(catalog=str(catalog),out=str(out),worker=0,workers=1,limit=0,delay=1.2)
     if stage=='wiki':
         args.batch_size=1;wiki(args)
-    elif stage=='mast':
+    elif stage in ('mast','archive_review'):
         # Server creates this task only after a completed negative-attribution scan.
         wikifile=folder/'wiki_input.jsonl'
         write_rows(wikifile,[{'id':obj['id'],'wiki_status':'not_detected'}])
@@ -33,9 +33,12 @@ def execute(job,folder):
     else:raise ValueError(f'Unsupported stage {stage}')
     result=list(read_rows(out))
     if len(result)!=1:raise RuntimeError('Task did not produce exactly one result')
-    if stage=='mast' and (payload.get('investigate') or os.getenv('HUBBLE_INVESTIGATE_DIR')):
+    if stage in ('mast','archive_review') and (payload.get('investigate') or os.getenv('HUBBLE_INVESTIGATE_DIR')):
         from investigator import investigate
         result[0]['investigation']=investigate({**obj,**result[0]},os.getenv('HUBBLE_INVESTIGATE_DIR',str(folder.parent/'investigations')))
+        if stage=='archive_review':
+            result[0]['archive_review_status']='reviewed'
+            result[0]['publication_status']=obj.get('publication_status','not_assessed')
     return result[0]
 
 if __name__=='__main__':

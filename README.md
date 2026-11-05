@@ -89,6 +89,12 @@ between Wikipedia and MAST/DINOv2 investigations according to backlog levels.
 Ten unfinished candidates allow two investigators, twenty allow three, up to five.
 Other PCs continue Wikipedia scanning. Telegram is sent only by the coordinator,
 whose token is encrypted with Windows current-user DPAPI and never sent to workers.
+
+After **Search SpaceCatalog in MAST** finishes, **Queue no-paper targets for PC review**
+adds targets with archive coverage but no linked STScI science paper (or a missing
+proposal ID) to the shared queue. Connected adaptive PCs review their MAST filters and
+previews in parallel. Results are written to `results/archive_review_results.jsonl`;
+the publication finding remains a proposal-level hint for manual paper review.
 Outside PCs require HTTPS and individual revocable credentials. Existing wiki-only
 tokens remain restricted until reissued. Update every PC before starting this mode.
 

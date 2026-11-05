@@ -2,7 +2,7 @@
 
 ## Backlog levels
 
-The coordinator counts unique unfinished MAST jobs (ready plus running), not
+The coordinator counts unique unfinished MAST and archive-review jobs (ready plus running), not
 all historical Wikipedia gaps or catalog aliases. All PCs with adaptive credentials
 can investigate. Each worker runs one task at a time.
 
@@ -59,7 +59,7 @@ Install AI dependencies (`setup.ps1 -AI`), enter its unique token and
 
 ```powershell
 $env:HUBBLE_QUEUE_TOKEN = '<this PC worker credential>'
-.\.venv\Scripts\python.exe cluster_worker.py --server https://YOUR-HOST:8766 --stages mast wiki --work-dir work\adaptive
+.\.venv\Scripts\python.exe cluster_worker.py --server https://YOUR-HOST:8766 --stages archive_review mast wiki --work-dir work\adaptive
 ```
 
 The coordinator fills available investigation slots first, then assigns Wikipedia
@@ -70,6 +70,10 @@ worker startup credentials securely; Telegram credentials are a different secret
 
 MAST investigations require two distinct bands whose common footprint covers the
 target center. Only archive JPEG/PNG previews are downloaded, never science FITS.
+After the SpaceCatalog scan, choose **Queue no-paper targets for PC review** on the
+coordinator. Connected adaptive workers process those targets in parallel. Review
+results are exported to `results/archive_review_results.jsonl`. The bibliography
+finding is proposal-level evidence and workers do not determine object novelty.
 DINOv2 executes on the investigating PC; its diversity score is relative to that
 worker's local preview collection, not a globally comparable novelty score. The
 worker sends observations and the report to the coordinator. Preview files remain

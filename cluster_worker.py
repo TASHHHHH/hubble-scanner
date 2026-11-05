@@ -65,14 +65,14 @@ def work(url,worker,folder,stages,max_jobs=0):
                     completion={'key':job['key'],'token':job['token'],'result':json.loads((attempt/'completion.json').read_text(encoding='utf-8'))}
                 request(url,secret,'/finish',completion)
                 count+=1
-                if job['stage']=='mast':
+                if job['stage'] in ('mast','archive_review'):
                     time.sleep(5)  # selected PC processes one candidate fully, then throttles the next query
             finally:stop(child)
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--server',required=True)
     p.add_argument('--worker',default=socket.gethostname()+'-'+uuid.uuid4().hex[:8])
-    p.add_argument('--work-dir',default='work/cluster-worker');p.add_argument('--stages',nargs='+',choices=['wiki','mast','quality'],default=['wiki','mast','quality'])
+    p.add_argument('--work-dir',default='work/cluster-worker');p.add_argument('--stages',nargs='+',choices=['wiki','mast','archive_review','quality'],default=['wiki','mast','archive_review','quality'])
     p.add_argument('--max-jobs',type=int,default=0);a=p.parse_args()
     if a.max_jobs<0:p.error('max-jobs must be nonnegative')
     try:work(a.server,a.worker,a.work_dir,a.stages,a.max_jobs)
