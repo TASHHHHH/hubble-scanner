@@ -1,0 +1,38 @@
+name: Windows installer
+on:
+  push:
+    tags: ['installer-v*']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          $runtime = 'installer/runtime/python-3.11.9-amd64.exe'
+          New-Item -ItemType Directory installer/runtime | Out-Null
+          Invoke-WebRequest https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe -OutFile $runtime
+          if ((Get-FileHash $runtime).Hash -ne '5EE42C4EEE1E6B4464BB23722F90B45303F79442DF63083F05322F1785F5FDDE') { throw 'Python installer checksum mismatch' }
+          $version = $env:GITHUB_REF_NAME.Substring('installer-v'.Length)
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$version" installer/HubbleScanner.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Test install and launch
+        shell: pwsh
+        run: |
+          $result = Start-Process dist/HubbleScanner-Setup.exe -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' -PassThru -Wait
+          if ($result.ExitCode -ne 0) {
+            Get-Content "$env:LOCALAPPDATA/HubbleScanner/setup.log" -ErrorAction SilentlyContinue
+            throw "Install failed ($($result.ExitCode))"
+          }
+          $app = "$env:LOCALAPPDATA/Programs/Hubble Scanner"
+          Push-Location $app
+          & "$app/.venv/Scripts/python.exe" -m unittest test_field_search test_lan_pairing test_app.DesktopTests
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Pop-Location
+      - name: Publish installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$env:GITHUB_REF_NAME" dist/HubbleScanner-Setup.exe --verify-tag --title "Hubble Scanner for Windows" --notes "Download HubbleScanner-Setup.exe for 64-bit Windows. Internet access is required for dependencies. Select AI dependencies when setting up an adaptive worker."

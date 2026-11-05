@@ -6,6 +6,10 @@ optional DINOv2 ranking and an adaptive distributed worker queue.
 
 ## Start
 
+On 64-bit Windows, download [HubbleScanner-Setup.exe](https://github.com/TASHHHHH/hubble-scanner/releases/latest/download/HubbleScanner-Setup.exe), run it, then open **Hubble Scanner** from Start. Setup includes Python and downloads the app dependencies. Select the AI option for adaptive workers.
+
+For a source checkout, follow the steps below.
+
 Install Python 3.11 with Tcl/Tk, then run:
 
 ```powershell
