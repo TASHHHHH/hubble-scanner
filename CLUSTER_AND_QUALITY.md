@@ -2,32 +2,9 @@
 
 All PCs connect to **one coordinator database on one master PC**. They claim jobs; they no longer need worker indices or copies of the whole catalog. Use this mode instead of simultaneously launching the old static `run-worker.ps1` commands for the same scan.
 
-## 1. Set up the master
+## Connect the PCs
 
-Install with `setup.ps1`. Keep the master awake while workers run. In PowerShell, from the extracted scanner folder:
-
-```powershell
-$py = '.\.venv\Scripts\python.exe'
-# Generate one random token. Copy the resulting value privately to every worker.
-$env:HUBBLE_QUEUE_TOKEN = (& $py -c "import secrets; print(secrets.token_urlsafe(32))")
-& $py coordinator.py --db out/queue.sqlite seed --catalog out/catalog.jsonl
-& $py coordinator.py --db out/queue.sqlite serve --host 0.0.0.0 --port 8765
-```
-
-Use the master PC's LAN IP in worker commands. TCP port 8765 must be reachable from those PCs. This HTTP service is for a trusted private LAN; it does not provide TLS. Do not expose it to the Internet. The random token authenticates workers. Requests to the coordinator bypass ambient HTTP proxy settings.
-
-The SQLite database stays on the master's local disk, never an SMB share. It persists completed jobs and ownership across restarts. Back up the database while the server/workers are stopped, including any remaining SQLite WAL files. Restart with the same database and the same token on every PC.
-
-## 2. Start each of the 8–10 PCs
-
-Install the same v3.1 bundle and core requirements on each PC. Each worker needs local writable disk for temporary files and its API cache. It does not need a GPU for searches or FITS checks.
-
-```powershell
-$env:HUBBLE_QUEUE_TOKEN = 'paste-the-same-random-token-from-the-master'
-.\run-cluster-worker.ps1 -Server http://192.168.1.50:8765
-```
-
-Replace the example IP. The default worker label is the computer name. Every PC runs the same command. The coordinator assigns different jobs atomically and maintains at most one Wikipedia task and four MAST tasks concurrently by default, with up to ten quality tasks. Set `serve --mast-slots N` if needed. Workers exit when there are no ready/running jobs; start them again after adding more work.
+Follow the [desktop invite instructions](DISTRIBUTED_SCAN.md#connect-pcs-on-the-same-network) to join the adaptive pool. Keep the coordinator database on local disk. Workers can reopen their invite when more jobs are ready in the same coordinator session.
 
 ## 3. What prevents duplicate searches
 
@@ -45,7 +22,7 @@ The guarantee is exclusive ownership of a queued job and rejection of stale resu
 Import completed earlier checkpoints before starting workers, so they do not search those objects again. The source catalog must match the seeded objects; complete title sets, retrieval timestamps and MAST radius/truncation are checked.
 
 ```powershell
-& $py coordinator.py --db out/queue.sqlite import-results `
+& .\.venv\Scripts\python.exe coordinator.py --db out/queue.sqlite import-results `
   --catalog out/catalog.jsonl --wiki-glob 'out/wiki_*.jsonl' --mast-glob 'out/mast_*.jsonl'
 ```
 
@@ -56,20 +33,20 @@ Use the actual paths to the original scan. Import and reseed are transactional: 
 In another terminal on the master:
 
 ```powershell
-& $py coordinator.py --db out/queue.sqlite status
-& $py coordinator.py --db out/queue.sqlite export --out out/cluster
-& $py scanner.py merge --catalog out/cluster/catalog.jsonl `
+& .\.venv\Scripts\python.exe coordinator.py --db out/queue.sqlite status
+& .\.venv\Scripts\python.exe coordinator.py --db out/queue.sqlite export --out out/cluster
+& .\.venv\Scripts\python.exe scanner.py merge --catalog out/cluster/catalog.jsonl `
   --wiki-glob out/cluster/wiki_coordinator.jsonl --mast-glob out/cluster/mast_coordinator.jsonl `
   --out out/cluster/candidates.jsonl
-& $py footprint_groups.py --results out/cluster/candidates.jsonl --out out/cluster/filter_groups.jsonl
-& $py mast_support.py --results out/cluster/candidates.jsonl `
+& .\.venv\Scripts\python.exe footprint_groups.py --results out/cluster/candidates.jsonl --out out/cluster/filter_groups.jsonl
+& .\.venv\Scripts\python.exe mast_support.py --results out/cluster/candidates.jsonl `
   --groups out/cluster/filter_groups.jsonl --out out/cluster/tsdp_products.csv
 ```
 
 If a heartbeat fails, the worker stops its child task and exits. Once the lease expires, the master marks that job `interrupted`. Confirm that the old worker/task has stopped, then use the key printed by `status`:
 
 ```powershell
-& $py coordinator.py --db out/queue.sqlite requeue --key 'mast:the-job-key' --confirm-worker-stopped
+& .\.venv\Scripts\python.exe coordinator.py --db out/queue.sqlite requeue --key 'mast:the-job-key' --confirm-worker-stopped
 ```
 
 Ordinary reported task failures and incomplete Wikipedia scans retry at most three times, with a delay. Exhausted jobs become `failed`. Their worker log is in the job's attempt directory. This avoids both endless retries and silently treating a failed query as a negative result. Workers polling a held job do not take it over automatically.
@@ -79,7 +56,7 @@ Ordinary reported task failures and incomplete Wikipedia scans retry at most thr
 After TSDP downloads the files, run:
 
 ```powershell
-& $py fits_quality.py red.fits green.fits blue.fits --out out/fits_quality.json
+& .\.venv\Scripts\python.exe fits_quality.py red.fits green.fits blue.fits --out out/fits_quality.json
 ```
 
 The checker reads local files without changing them. It scans science arrays in bounded tiles and pairs DQ/ERR/WHT arrays by `EXTVER`, preserving chip identity. It counts nonfinite pixels, rejected DQ bits, invalid error values and zero/invalid weights. Finite science zeros remain valid. Constant `PIXVALUE` companion arrays are supported. Missing or mismatched masks stay visible in the report.
@@ -100,7 +77,7 @@ The default grid is 128×128; use `--grid 256` or `--grid 512` for finer screeni
 Place immutable input FITS on a read-only share reachable by the master and workers at the same UNC paths. Submit each desired RGB input set on the master:
 
 ```powershell
-& $py coordinator.py --db out/queue.sqlite quality `
+& .\.venv\Scripts\python.exe coordinator.py --db out/queue.sqlite quality `
   '\\MASTER\HubbleData\red.fits' '\\MASTER\HubbleData\green.fits' '\\MASTER\HubbleData\blue.fits'
 ```
 

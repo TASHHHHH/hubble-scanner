@@ -15,3 +15,4 @@ work/
 *.key
 *.pfx
 *.p12
+*.hubble-invite

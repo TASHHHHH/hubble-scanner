@@ -5,3 +5,4 @@ astroquery>=0.4.9,<0.5
 Pillow>=10,<13
 numpy>=1.26,<3
 shapely>=2,<3
+cryptography>=42

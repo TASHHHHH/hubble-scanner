@@ -21,10 +21,20 @@ others. Claims and level checks share one SQLite transaction, preventing duplica
 assignment or concurrent capacity overruns. Expired tasks remain held for review.
 The GUI Workers tab displays backlog and investigator capacity.
 
-## Coordinator setup
+## Connect PCs on the same network
+
+1. Install the same scanner version with `setup.ps1 -AI` on each PC and open the app. On the coordinator, import the catalog and seed its queue.
+2. On the coordinator, open **Workers → Create worker invite**. If prompted, choose its address on the shared network. Enter a unique worker name and save the invite. Keep the app open.
+3. Transfer the invite privately to that PC. Open **Workers → Join with invite** there and select the file. Repeat with a separate invite for each additional PC.
+
+Each invite contains a worker credential. Anyone with the file can act as that worker. Open invites only from your coordinator. You can reuse the file when the queue has more work during the same coordinator session. After restarting the coordinator, create fresh invites. Reusing the same worker name revokes its previous credential.
+
+If the worker cannot connect, check **View Logs**. Check that both PCs are on the same network and the coordinator allows incoming TCP port 8766 on its private network. For a certificate error after a restart, transfer a fresh invite.
+
+## Manual coordinator setup
 
 Install with `setup.ps1 -AI`, build/import a catalog, seed it and start the local
-coordinator. Select **Issue worker token** once for each PC. New credentials allow
+coordinator. Under **Workers → Manual connection settings**, select **Issue worker token** once for each PC. New credentials allow
 Wikipedia and MAST investigation only, not quality tasks, administration, or other
 workers' jobs. Old wiki-only credentials stay restricted; reissue them to opt in.
 Each PC should have its own token and workspace.
@@ -55,8 +65,7 @@ $env:HUBBLE_QUEUE_TOKEN = '<this PC worker credential>'
 The coordinator fills available investigation slots first, then assigns Wikipedia
 jobs. One task must finish before the worker changes roles. The coordinator PC can
 also participate using **Join local pool**. A private CA can be supplied through
-HUBBLE_CA_BUNDLE; TLS verification is never disabled. Worker API tokens are shown
-masked in the GUI and are not saved by the app. Store any externally managed
+HUBBLE_CA_BUNDLE; TLS verification is never disabled. Tokens entered manually are masked. Invite files hold the per-PC token. Store any externally managed
 worker startup credentials securely; Telegram credentials are a different secret.
 
 MAST investigations require two distinct bands whose common footprint covers the

@@ -33,6 +33,10 @@ RGB candidates; it does not perform image reduction or generate final RGB images
 
 ## Multiple PCs
 
+On the same network, open **Workers → Create worker invite** on the coordinator.
+Send the invite privately to the second PC and select it under **Workers → Join with invite**.
+Keep the coordinator open and create a separate invite for each worker.
+
 See [Adaptive distributed scan](DISTRIBUTED_SCAN.md). All authorized PCs can switch
 between Wikipedia and MAST/DINOv2 investigations according to backlog levels.
 Ten unfinished candidates allow two investigators, twenty allow three, up to five.

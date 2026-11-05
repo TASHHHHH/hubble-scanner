@@ -82,6 +82,7 @@ class App(tk.Tk):
         self.runner = Runner()
         self.server = None
         self.server_thread = None
+        self.lan_server = None
         self.notification_stop = None
         self.workspace = tk.StringVar(value=str(Path(workspace or Path.home() / 'HubbleScout').resolve()))
         self.host = tk.StringVar(value='127.0.0.1')
@@ -172,19 +173,26 @@ class App(tk.Tk):
         self.quality_text.pack(fill='both', expand=True, pady=12)
 
     def cluster_tab(self):
-        f = self.tab('Workers', 'Worker connections', 'Connect PCs to one coordinator. Expired jobs are held for review. Trusted LAN only; HTTP has no TLS.')
+        f = self.tab('Workers', 'Worker connections', 'For PCs on the same network, create an invite on the coordinator and open it on the worker.')
+        row = ttk.Frame(f); row.pack(fill='x', pady=10)
+        ttk.Button(row, text='Create worker invite…', command=self.create_invite).pack(side='left')
+        ttk.Button(row, text='Join with invite…', command=self.join_invite).pack(side='left', padx=8)
+        ttk.Label(f, textvariable=self.metrics).pack(anchor='w', pady=4)
+        manual = ttk.Frame(f)
+        def toggle_manual():
+            if manual.winfo_manager(): manual.pack_forget()
+            else: manual.pack(fill='x')
+        ttk.Button(f, text='Manual connection settings', command=toggle_manual).pack(anchor='w', pady=4)
         self.server_fields = []
         for label, var, hidden in [('Local coordinator address', self.host, False), ('Worker HTTPS server URL', self.endpoint, False), ('Credential (worker token on remote PCs)', self.token, True)]:
-            row = ttk.Frame(f); row.pack(fill='x', pady=4)
+            row = ttk.Frame(manual); row.pack(fill='x', pady=4)
             ttk.Label(row, text=label, width=43).pack(side='left')
             entry = ttk.Entry(row, textvariable=var, show='•' if hidden else '')
             entry.pack(side='left', fill='x', expand=True)
             if var is self.host or var is self.token: self.server_fields.append(entry)
-        row = ttk.Frame(f); row.pack(fill='x', pady=12)
+        row = ttk.Frame(manual); row.pack(fill='x', pady=12)
         for label, callback in [('Start coordinator', self.start_server), ('Issue worker token', self.copy_token), ('Join adaptive pool', self.worker), ('Refresh status', self.status)]:
             ttk.Button(row, text=label, command=callback).pack(side='left', padx=(0, 8))
-        ttk.Label(f, textvariable=self.metrics, wraplength=1000).pack(anchor='w', pady=6)
-        ttk.Label(f, text='Issue a separate token for each remote PC. Never share the coordinator credential.\nRemote connections require the TLS endpoint. Setup: DISTRIBUTED_SCAN.md.', style='Muted.TLabel').pack(anchor='w', pady=10)
         ttk.Button(f,text='Encrypted Telegram settings',command=self.telegram_settings).pack(anchor='w')
 
     def telegram_settings(self):
@@ -237,10 +245,11 @@ class App(tk.Tk):
         if os.name == 'nt': os.startfile(path)
         else: messagebox.showinfo('Workspace', str(path))
 
-    def run(self, commands, investigator=False):
+    def run(self, commands, investigator=False, *, worker_token=None, ca_bundle=None):
         try:
             path = self.workspace_path()
-            env = os.environ.copy(); env['HUBBLE_CACHE_DIR'] = str(path / '.cache'); env['HUBBLE_QUEUE_TOKEN'] = self.token.get()
+            env = os.environ.copy(); env['HUBBLE_CACHE_DIR'] = str(path / '.cache'); env['HUBBLE_QUEUE_TOKEN'] = worker_token or self.token.get()
+            if ca_bundle: env['HUBBLE_CA_BUNDLE'] = str(ca_bundle)
             env.pop('HUBBLE_INVESTIGATE_DIR',None)
             if investigator:env['HUBBLE_INVESTIGATE_DIR']=str(path/'investigations')
             env.pop('HUBBLE_TELEGRAM_TOKEN',None);env.pop('HUBBLE_TELEGRAM_CHAT_ID',None)
@@ -272,6 +281,52 @@ class App(tk.Tk):
             return True
         except Exception as exc:
             self.server = None; messagebox.showerror('Coordinator error', str(exc)); return False
+
+    def create_invite(self):
+        from lan_pairing import lan_addresses, start_listener
+        from coordinator import Queue
+        from runtime import atomic_json
+        try:
+            if not self.lan_server:
+                addresses = lan_addresses()
+                if not addresses:
+                    raise ValueError('Connect this PC to the worker’s network and try again.')
+                address = addresses[0]
+                if len(addresses) > 1:
+                    address = simpledialog.askstring('Coordinator network',
+                        'Choose the address reachable from the worker: ' + ', '.join(addresses),
+                        initialvalue=address, parent=self)
+                    if address is None: return
+                    if address not in addresses: raise ValueError('Choose one of the listed addresses.')
+            name = simpledialog.askstring('Create worker invite',
+                'Worker PC name (using the same name replaces its credential):', parent=self)
+            if not name or not name.strip(): return
+            path = filedialog.asksaveasfilename(title='Save private worker invite',
+                initialfile='worker.hubble-invite', defaultextension='.hubble-invite',
+                filetypes=[('Hubble worker invite', '*.hubble-invite')])
+            if not path or not self.start_server(): return
+            q = Queue(self.workspace_path() / 'queue.sqlite', wiki_slots=10, mast_slots=1)
+            if not self.lan_server:
+                self.lan_server, self.lan_cert = start_listener(q, address, 8766, secrets.token_urlsafe(32))
+            atomic_json(Path(path), {'format': 'hubble-lan-1', 'address': self.lan_server.server_address[0],
+                'token': q.worker_token(name.strip(), 'adaptive'), 'certificate': self.lan_cert})
+            self.state.set('Accepting workers on ' + self.lan_server.server_address[0] + ':8766')
+            messagebox.showinfo('Invite ready', 'Send this file privately to the worker PC. On that PC, choose Workers → Join with invite. Keep this coordinator open.')
+        except Exception as exc:
+            messagebox.showerror('Cannot create invite', str(exc))
+
+    def join_invite(self):
+        from lan_pairing import read_invite
+        path = filedialog.askopenfilename(title='Open invite from your coordinator',
+            filetypes=[('Hubble worker invite', '*.hubble-invite')])
+        if not path: return
+        try:
+            url, token, ca = read_invite(path, self.workspace_path())
+            self.run([command('cluster_worker', '--server', url, '--stages', 'mast', 'wiki',
+                              '--work-dir', self.workspace_path() / 'worker')],
+                     worker_token=token, ca_bundle=ca)
+        except Exception as exc:
+            messagebox.showerror('Cannot open worker invite', str(exc))
 
     def copy_token(self):
         if not self.server:
@@ -366,6 +421,8 @@ class App(tk.Tk):
             return
         self.runner.stop()
         if self.notification_stop:self.notification_stop.set()
+        if self.lan_server:
+            self.lan_server.shutdown(); self.lan_server.server_close()
         if self.server: self.server.shutdown(); self.server.server_close()
         self.destroy()
 
