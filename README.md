@@ -41,8 +41,22 @@ Use **Scan → Search SpaceCatalog in MAST** to download the versioned object an
 designation files, verify their SHA-256 checksums, and query MAST in batches. Results
 are saved as `results/spacecatalog_hst.jsonl` and `.csv`. The scan looks for public
 HST image footprints covering each target center and lists observation IDs and filters.
-A match confirms archive coverage. It does not establish whether someone has already
-published a processed image. `publication_status` remains `not_assessed`.
+It also writes the archive-matched subset to `results/spacecatalog_hst.review.csv`,
+one observation per row in `results/spacecatalog_hst.observations.csv`,
+unique program-paper links to `results/spacecatalog_hst.papers.csv`, and catalog-name
+matches to `results/spacecatalog_hst.target_papers.csv`, then cross-checks
+matched observations' proposal IDs against the [STScI Papertrack HST bibliography](https://archive.stsci.edu/papertrack/docs/public_search.html).
+Results include program IDs, associated paper bibcodes, and whether a catalog name
+appears in a paper title. A paper linked to the same proposal is program-level evidence;
+it does not prove that the paper studied this particular object. Likewise, no Papertrack
+match is not proof that an object has never been published. Check paper records and
+the [bibliography methodology](https://archive.stsci.edu/hst/bibliography/basic_methodology.html)
+before making a novelty claim.
+Start manual triage with `spacecatalog_hst.review.csv`: filter for
+`no_published_science_paper_found_for_programs`, then use its program IDs to find papers
+in `spacecatalog_hst.papers.csv`. Open their ADS links and check the actual target and
+datasets used. `target_papers.csv` is a shortcut for cases where a catalog name occurs
+in a linked paper title.
 
 Imported rows retain their source name, URL, license, and retrieval date. SpaceCatalog
 passes through upstream licensing terms, so consult the per-row source fields before
@@ -89,8 +103,10 @@ tokens remain restricted until reissued. Update every PC before starting this mo
   pixel evidence; common coverage is sampled. Review instrument-specific flags.
 - DINOv2 ranks preview diversity, not astronomical novelty. Archive previews
   are single-band browse images, not constructed RGB composites.
-- Every target retains `publication_status: not_assessed`. Independent verification
-  is required before any publication or discovery claim.
+- Papertrack links refereed HST science papers to proposal IDs. Proposal-level links
+  can include papers about other targets in the same program; a missing match cannot
+  prove an object is unpublished. Review linked papers and search the literature before
+  any novelty claim.
 
 ## Development
 

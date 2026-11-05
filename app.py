@@ -142,7 +142,7 @@ class App(tk.Tk):
         for title, description, callback in [
             ('Try offline demo', 'Synthetic catalog, three FITS bands and sample results. No API calls.', self.demo),
             ('Build catalog', 'Build the Messier, NGC and IC input list with the selected catalog coverage.', self.catalog),
-            ('Search SpaceCatalog in MAST', 'Download the named object list, then find public Hubble images covering each target center.', self.archive_sweep),
+            ('Search SpaceCatalog in MAST', 'Match public Hubble images and check linked STScI papers by proposal; review object-level matches.', self.archive_sweep),
             ('Import catalog & seed queue', 'Choose JSONL from a previous run. Known aliases and identical queries are deduplicated.', self.seed),
             ('Join local pool', 'Scan Wikipedia or investigate candidates according to the backlog level.', self.local_scan),
             ('Collect results', 'Snapshot the queue, compute overlapping filter triples and write CSV files.', self.collect)]:

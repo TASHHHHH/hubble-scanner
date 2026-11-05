@@ -1,6 +1,7 @@
 """Offline logic smoke tests. No requests to Wikimedia or MAST."""
 import tempfile
 import unittest
+import csv
 from pathlib import Path
 from unittest.mock import patch
 import scanner
@@ -66,16 +67,75 @@ class CatalogUnitTests(unittest.TestCase):
 
 
 class UpgradeTests(unittest.TestCase):
-    def test_mast_archive_crossmatch_uses_footprint_and_keeps_publication_unassessed(self):
+    def test_mast_crossmatch_uses_footprints_and_program_bibliography(self):
         from archive_sweep import scan
-        target={'id':'NGC9999','ra_deg':10,'dec_deg':20,'major_arcmin':1,'source':'fixture'}
+        target={'id':'NGC9999','ra_deg':10,'dec_deg':20,'major_arcmin':1,'source':'fixture',
+                'wiki_titles':['NGC 9999']}
         observation={'target_name':'NGC9999','obsid':'42','obs_id':'hst42','s_ra':'10','s_dec':'20',
-                     'filters':'F606W;F814W','s_region':'POLYGON ICRS 9.9 19.9 10.1 19.9 10.1 20.1 9.9 20.1',
+                     'proposal_id':'10152','filters':'F606W;F814W',
+                     's_region':'POLYGON ICRS 9.9 19.9 10.1 19.9 10.1 20.1 9.9 20.1',
                      'instrument_name':'ACS/WFC','t_exptime':'100'}
-        with tempfile.TemporaryDirectory() as tmp, patch('archive_sweep.fetch_archive',return_value=[observation]):
+        papers=[{'bibcode':'2025ApJ...123..456A','title':'NGC 9999: a test result',
+                 'publication_date':'2025-01-01','journal':'ApJ','refereed':True,
+                 'paper_type':'SCIENCE','programs':['10152']}]
+        with tempfile.TemporaryDirectory() as tmp, patch('archive_sweep.fetch_archive',return_value=[observation]), \
+             patch('archive_sweep.fetch_papers',return_value=papers):
             rows=scan([target],Path(tmp)/'results.jsonl',Path(tmp)/'cache')
+            papers_csv=Path(tmp)/'results.papers.csv'
+            with papers_csv.open(encoding='utf-8-sig',newline='') as stream:
+                paper_rows=list(csv.DictReader(stream))
+            target_papers_csv=Path(tmp)/'results.target_papers.csv'
+            with target_papers_csv.open(encoding='utf-8-sig',newline='') as stream:
+                target_papers=list(csv.DictReader(stream))
+            review_csv=Path(tmp)/'results.review.csv'
+            with review_csv.open(encoding='utf-8-sig',newline='') as stream:
+                review_rows=list(csv.DictReader(stream))
+            observations_csv=Path(tmp)/'results.observations.csv'
+            with observations_csv.open(encoding='utf-8-sig',newline='') as stream:
+                observation_rows=list(csv.DictReader(stream))
         self.assertEqual(rows[0]['mast_filters'],['F606W','F814W'])
-        self.assertEqual(rows[0]['publication_status'],'not_assessed')
+        self.assertEqual(rows[0]['publication_status'],'program_has_published_science_paper')
+        self.assertTrue(rows[0]['object_name_in_paper_title'])
+        self.assertEqual(rows[0]['program_bibcodes'],['2025ApJ...123..456A'])
+        self.assertEqual(len(paper_rows),1)
+        self.assertEqual(paper_rows[0]['bibcode'],'2025ApJ...123..456A')
+        self.assertIn('ui.adsabs.harvard.edu',paper_rows[0]['ads_url'])
+        self.assertEqual(len(target_papers),1)
+        self.assertEqual(target_papers[0]['object_id'],'NGC9999')
+        self.assertEqual(len(review_rows),1)
+        self.assertEqual(review_rows[0]['mast_program_ids'],'["10152"]')
+        self.assertEqual(len(observation_rows),1)
+        self.assertEqual(observation_rows[0]['obsid'],'42')
+
+    def test_papertrack_fetch_uses_program_filter_and_persistent_cache(self):
+        from archive_sweep import fetch_papers
+        from unittest.mock import Mock
+        paper={'bibcode':'2025ApJ...123..456A','title':'Example','programs':['10152'],
+               'paper_type':'SCIENCE','refereed':True}
+        session=Mock()
+        session.headers={}
+        response=Mock();response.raise_for_status.return_value=None;response.json.return_value=[paper]
+        session.post.return_value=response
+        with tempfile.TemporaryDirectory() as tmp:
+            first=fetch_papers(['10152'],tmp,session)
+            second=fetch_papers(['10152'],tmp,session)
+        self.assertEqual(first,second)
+        self.assertEqual(session.post.call_count,1)
+        body=session.post.call_args.kwargs['json']
+        self.assertEqual(body['mission'],'HST')
+        self.assertEqual(body['hst_programs'],'10152')
+        self.assertEqual(body['papertypes'],['SCIENCE'])
+
+    def test_no_program_paper_is_reported_as_a_limited_search_result(self):
+        from archive_sweep import scan
+        target={'id':'NGC9999','ra_deg':10,'dec_deg':20,'major_arcmin':1}
+        observation={'obsid':'42','proposal_id':'10152','s_ra':'10','s_dec':'20','filters':'F606W',
+            's_region':'POLYGON ICRS 9.9 19.9 10.1 19.9 10.1 20.1 9.9 20.1'}
+        with tempfile.TemporaryDirectory() as tmp, patch('archive_sweep.fetch_archive',return_value=[observation]), \
+             patch('archive_sweep.fetch_papers',return_value=[]):
+            row=scan([target],Path(tmp)/'result.jsonl',Path(tmp)/'cache')[0]
+        self.assertEqual(row['publication_status'],'no_published_science_paper_found_for_programs')
+        self.assertFalse(row['object_name_in_paper_title'])
 
     def test_wide_catalog_joins_canonical_ngc_and_keeps_herbig_haro_aliases(self):
         import csv
