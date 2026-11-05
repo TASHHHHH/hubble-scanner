@@ -7,6 +7,37 @@ import scanner
 
 
 class CatalogUnitTests(unittest.TestCase):
+    def test_spacecatalog_import_checksums_and_preserves_designations_and_license(self):
+        import gzip
+        import hashlib
+        import io
+        from catalogs import spacecatalog_rows
+        tables={
+            'objects':'slug,name,category,object_type,ra_deg,dec_deg,source\n'
+                     'ngc-224,Andromeda Galaxy,galaxy,Spiral,10.7,41.3,openngc\n',
+            'designations':'slug,designation,kind\nngc-224,NGC 224,primary\nngc-224,M 31,alias\n',
+            'sources':'id,name,url,license,retrieved_at\nopenngc,OpenNGC,https://example.test,CC-BY-SA-4.0,2026-01-01\n'}
+        files={}
+        for name,text in tables.items():
+            raw=text.encode()
+            if name!='sources':
+                raw=io.BytesIO()
+                with gzip.GzipFile(fileobj=raw,mode='wb',mtime=0) as zipped:zipped.write(text.encode())
+                raw=raw.getvalue()
+            files[name]=(raw,hashlib.sha256(raw).hexdigest())
+        spec={name:(f'https://example.test/{name}.csv'+('.gz' if name!='sources' else ''),digest)
+              for name,(raw,digest) in files.items()}
+        def download(url,**_kwargs):
+            from unittest.mock import Mock
+            result=Mock();result.raise_for_status.return_value=None
+            result.content=files[Path(url).stem.replace('.csv','')][0]
+            return result
+        with tempfile.TemporaryDirectory() as tmp, patch('catalogs.SPACECATALOG_FILES',spec), patch('requests.get',side_effect=download):
+            rows=spacecatalog_rows(tmp)
+        self.assertEqual(rows[0]['wiki_titles'],['Andromeda Galaxy','NGC 224','M 31'])
+        self.assertEqual(rows[0]['source_license'],'CC-BY-SA-4.0')
+        self.assertEqual(rows[0]['spacecatalog_slug'],'ngc-224')
+
     def test_ngc_and_messier_csv(self):
         sample = 'Name;Type;RA;Dec;MajAx;M\nNGC0224;G;00:42:44.35;+41:16:08.6;177.83;031\n'
         row = scanner.read_ngc_csv(sample)[0]
@@ -35,6 +66,17 @@ class CatalogUnitTests(unittest.TestCase):
 
 
 class UpgradeTests(unittest.TestCase):
+    def test_mast_archive_crossmatch_uses_footprint_and_keeps_publication_unassessed(self):
+        from archive_sweep import scan
+        target={'id':'NGC9999','ra_deg':10,'dec_deg':20,'major_arcmin':1,'source':'fixture'}
+        observation={'target_name':'NGC9999','obsid':'42','obs_id':'hst42','s_ra':'10','s_dec':'20',
+                     'filters':'F606W;F814W','s_region':'POLYGON ICRS 9.9 19.9 10.1 19.9 10.1 20.1 9.9 20.1',
+                     'instrument_name':'ACS/WFC','t_exptime':'100'}
+        with tempfile.TemporaryDirectory() as tmp, patch('archive_sweep.fetch_archive',return_value=[observation]):
+            rows=scan([target],Path(tmp)/'results.jsonl',Path(tmp)/'cache')
+        self.assertEqual(rows[0]['mast_filters'],['F606W','F814W'])
+        self.assertEqual(rows[0]['publication_status'],'not_assessed')
+
     def test_wide_catalog_joins_canonical_ngc_and_keeps_herbig_haro_aliases(self):
         import csv
         from catalogs import add_wide_catalogs

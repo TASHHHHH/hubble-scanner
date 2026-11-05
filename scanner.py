@@ -153,6 +153,9 @@ def catalog(args):
     if getattr(args, 'wide', False):
         from catalogs import add_wide_catalogs
         add_wide_catalogs(rows)
+    if getattr(args, 'spacecatalog', False):
+        from catalogs import spacecatalog_rows
+        rows.extend(spacecatalog_rows(Path(args.out).parent / '.cache'))
     for path in args.extra_csv or []:
         rows.extend(load_extra_csv(path))
     # Catalog designations remain separate where scientifically ambiguous; aliases preserved.
@@ -464,6 +467,7 @@ def main():
     a = sub.add_parser('catalog'); a.add_argument('--ngc-csv'); a.add_argument('--addendum-csv')
     extension = a.add_mutually_exclusive_group()
     extension.add_argument('--wide', action='store_true', help='Add the bundled SIMBAD designations, including Herbig-Haro objects')
+    extension.add_argument('--spacecatalog', action='store_true', help='Download and checksum SpaceCatalog DR1 objects and designations')
     extension.add_argument('--with-vizier', action='store_true', help='Add Arp and Sharpless 2 catalogs via VizieR')
     a.add_argument('--extra-csv', action='append', help='Additional catalog with ICRS ra_deg/dec_deg'); a.add_argument('--out', default='out/catalog.jsonl'); a.set_defaults(func=catalog)
     a = sub.add_parser('wiki'); a.add_argument('--catalog', default='out/catalog.jsonl'); a.add_argument('--out', required=True)

@@ -29,7 +29,7 @@ jobs:
           }
           $app = "$env:LOCALAPPDATA/Programs/Hubble Scanner"
           Push-Location $app
-          & "$app/.venv/Scripts/python.exe" -m unittest test_field_search test_lan_pairing test_app.DesktopTests
+          & "$app/.venv/Scripts/python.exe" -m unittest test_field_search test_lan_pairing test_app.DesktopTests test_offline.UpgradeTests
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Pop-Location
       - name: Publish installer

@@ -3,6 +3,7 @@ import os
 import csv
 import re
 from pathlib import Path
+from urllib.parse import urlparse
 from astropy.coordinates import SkyCoord, FK4, FK5
 from astropy.time import Time
 import astropy.units as u
@@ -89,3 +90,63 @@ def add_wide_catalogs(rows, snapshot=None):
             if title != row['id'] and title not in row['aliases']:
                 row['aliases'].append(title)
     print(f'Loaded {len(by_oid)} distinct SIMBAD objects from the expanded catalog snapshot.', flush=True)
+
+
+SPACECATALOG_FILES = {
+    'objects': ('https://github.com/space-catalog/data-releases/releases/download/dr1/spacecatalog-dr1-objects.csv.gz',
+                '630ba7ae703659f0c4fe67480d11dd1f2c7eafd89bb2443361d68d9e91321398'),
+    'designations': ('https://github.com/space-catalog/data-releases/releases/download/dr1/spacecatalog-dr1-designations.csv.gz',
+                     '1ea90d8d329d8b5b03f84fa15846a9ca2ecada5825dfd984fd0bc156b17114e6'),
+    'sources': ('https://github.com/space-catalog/data-releases/releases/download/dr1/spacecatalog-dr1-sources.csv',
+                '8f9c4d6441d1ed5c3ba38c35164ae275726167b3609df8e7eb2a1732dcb57ea4'),
+}
+
+
+def spacecatalog_rows(cache_dir):
+    """Download pinned SpaceCatalog release, verify checksums, and import named sky objects."""
+    import csv
+    import gzip
+    import hashlib
+    import io
+    import requests
+    root=Path(cache_dir)/'spacecatalog-dr1'
+    root.mkdir(parents=True,exist_ok=True)
+    tables={}
+    for key,(url,expected) in SPACECATALOG_FILES.items():
+        filename=Path(urlparse(url).path).name
+        path=root/filename
+        if not path.exists() or hashlib.sha256(path.read_bytes()).hexdigest()!=expected:
+            response=requests.get(url,timeout=(15,180),headers={'User-Agent':'HubbleScanner/1.0 research catalog import'})
+            response.raise_for_status()
+            raw=response.content
+            if hashlib.sha256(raw).hexdigest()!=expected:
+                raise ValueError(f'SpaceCatalog {key} checksum mismatch')
+            temporary=path.with_suffix('.tmp')
+            temporary.write_bytes(raw);temporary.replace(path)
+        opener=gzip.open if path.name.endswith('.gz') else open
+        with opener(path,'rt',encoding='utf-8',newline='') as stream:
+            tables[key]=list(csv.DictReader(stream))
+    aliases={}
+    for row in tables['designations']:
+        aliases.setdefault(row.get('slug'),[]).append(row.get('designation','').strip())
+    provenance={row['id']:row for row in tables['sources']}
+    results=[]
+    for row in tables['objects']:
+        try:
+            ra=float(row['ra_deg']);dec=float(row['dec_deg'])
+        except (TypeError,ValueError,KeyError): continue
+        if not (0<=ra<360 and -90<=dec<=90): continue
+        ident='SC-'+row['slug']
+        names=list(dict.fromkeys([row['name']]+aliases.get(row['slug'],[])))
+        names=[n for n in names if n]
+        source=provenance.get(row.get('source',''),{})
+        results.append({'id':ident,'ra_deg':ra,'dec_deg':dec,'major_arcmin':0,
+            'object_type':row.get('object_type') or row.get('category',''),
+            'wiki_titles':names or [ident],'aliases':names[1:],
+            'source':'spacecatalog:'+row.get('source','unknown'),
+            'source_name':source.get('name',''),'source_url':source.get('url',''),
+            'source_license':source.get('license',''),'source_retrieved_at':source.get('retrieved_at',''),
+            'spacecatalog_slug':row['slug'],'spacecatalog_category':row.get('category',''),
+            'catalog_verified':True,'catalog_release':'SpaceCatalog DR1',
+            'publication_status':'not_assessed'})
+    return results

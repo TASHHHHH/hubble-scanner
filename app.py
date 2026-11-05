@@ -142,6 +142,7 @@ class App(tk.Tk):
         for title, description, callback in [
             ('Try offline demo', 'Synthetic catalog, three FITS bands and sample results. No API calls.', self.demo),
             ('Build catalog', 'Build the Messier, NGC and IC input list with the selected catalog coverage.', self.catalog),
+            ('Search SpaceCatalog in MAST', 'Download the named object list, then find public Hubble images covering each target center.', self.archive_sweep),
             ('Import catalog & seed queue', 'Choose JSONL from a previous run. Known aliases and identical queries are deduplicated.', self.seed),
             ('Join local pool', 'Scan Wikipedia or investigate candidates according to the backlog level.', self.local_scan),
             ('Collect results', 'Snapshot the queue, compute overlapping filter triples and write CSV files.', self.collect)]:
@@ -262,6 +263,10 @@ class App(tk.Tk):
 
     def demo(self): self.run([command('demo', '--out', self.workspace_path() / 'demo')])
     def catalog(self): self.run([command('scanner', 'catalog', '--out', self.workspace_path() / 'catalog.jsonl', *(['--wide'] if self.wide.get() else []))])
+    def archive_sweep(self):
+        root=self.workspace_path()
+        self.run([command('archive_sweep','--out',root/'results'/'spacecatalog_hst.jsonl',
+                          '--cache',root/'.cache'/'spacecatalog-hst')])
     def seed(self):
         path = filedialog.askopenfilename(title='Select catalog JSONL', filetypes=[('JSON Lines', '*.jsonl')])
         if path: self.run([command('coordinator', '--db', self.workspace_path() / 'queue.sqlite', 'seed', '--catalog', path)])

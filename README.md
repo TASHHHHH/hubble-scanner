@@ -37,6 +37,20 @@ RGB candidates; it does not perform image reduction or generate final RGB images
 
 ## Whole-frame search
 
+Use **Scan → Search SpaceCatalog in MAST** to download the versioned object and
+designation files, verify their SHA-256 checksums, and query MAST in batches. Results
+are saved as `results/spacecatalog_hst.jsonl` and `.csv`. The scan looks for public
+HST image footprints covering each target center and lists observation IDs and filters.
+A match confirms archive coverage. It does not establish whether someone has already
+published a processed image. `publication_status` remains `not_assessed`.
+
+Imported rows retain their source name, URL, license, and retrieval date. SpaceCatalog
+passes through upstream licensing terms, so consult the per-row source fields before
+redistributing catalog data or results.
+
+The imported release is [SpaceCatalog DR1](https://github.com/space-catalog/data-releases/releases/tag/dr1).
+Archive coverage comes from public HST science image footprints in the [MAST HST archive](https://archive.stsci.edu/missions-and-data/hst).
+
 In **FITS Quality**, select **Search whole frames** and choose two or more overlapping
 local science FITS files. Select **Open field report** when the scan finishes.
 Each row shows a sky position and centered cutouts labeled with the input exposure
