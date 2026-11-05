@@ -31,6 +31,21 @@ science product URIs for [TSDP Import MAST CSV](https://github.com/TASHHHHH/tash
 defaults to ten groups, and reports incomplete groups separately. This app finds
 RGB candidates; it does not perform image reduction or generate final RGB images.
 
+## Whole-frame search
+
+In **FITS Quality**, select **Search whole frames** and choose two or more overlapping
+local science FITS files. Select **Open field report** when the scan finishes.
+Each row shows a sky position and centered cutouts labeled with the input exposure
+and filter. The JSON next to the report includes the input paths and zero-based pixel coordinates.
+
+The search looks across each usable science chip for positive peaks at least five local
+noise estimates above background, with support from adjacent pixels. It checks available
+DQ, ERR and WHT masks, then matches peaks from different exposure IDs within 0.2 arcseconds.
+The report shows up to 200 groups, sorted by the number of matching exposures and then
+by the weakest peak contrast in the group. Faint diffuse features, one-exposure sources
+and frames with poorly aligned WCS can be missed. Matches require review for artifacts
+and prior identification.
+
 ## Multiple PCs
 
 On the same network, open **Workers → Create worker invite** on the coordinator.

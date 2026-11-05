@@ -169,6 +169,9 @@ class App(tk.Tk):
     def quality_tab(self):
         f = self.tab('FITS Quality', 'FITS quality', 'Inspect WCS overlap and DQ / ERR / WHT masks. Files are read-only; common coverage is sampled.')
         ttk.Button(f, text='Choose FITS files & assess', command=self.quality).pack(anchor='w')
+        row = ttk.Frame(f); row.pack(anchor='w', pady=6)
+        ttk.Button(row, text='Search whole frames…', command=self.field_search).pack(side='left')
+        ttk.Button(row, text='Open field report', command=self.field_report).pack(side='left', padx=8)
         self.quality_text = tk.Text(f, height=10, bg='#ffffff', fg='#3b413c', relief='flat', wrap='word', state='disabled')
         self.quality_text.pack(fill='both', expand=True, pady=12)
 
@@ -387,6 +390,23 @@ class App(tk.Tk):
     def quality(self):
         paths = filedialog.askopenfilenames(title='Science FITS files', filetypes=[('FITS', '*.fits *.fit *.fits.gz')])
         if paths: self.run([command('fits_quality', *paths, '--out', self.workspace_path() / 'fits_quality.json')])
+    def field_search(self):
+        paths = filedialog.askopenfilenames(title='Select overlapping science FITS files',
+            filetypes=[('Science FITS', '*.fits *.fit *.fits.gz')])
+        if not paths: return
+        if len(paths) < 2:
+            messagebox.showinfo('Select overlapping frames', 'Choose at least two different exposures.'); return
+        self.run([command('field_search', *paths, '--out', self.workspace_path() / 'field-search')])
+
+    def field_report(self):
+        import webbrowser
+        latest = self.workspace_path() / 'field-search' / 'latest.json'
+        if not latest.exists():
+            messagebox.showinfo('Whole-frame search', 'Run a whole-frame search first.'); return
+        report = Path(json.loads(latest.read_text(encoding='utf-8'))['report'])
+        if not report.is_file() or report.resolve().parent.parent != latest.parent.resolve():
+            messagebox.showerror('Report unavailable', 'Run the search again to create a report.'); return
+        webbrowser.open(report.as_uri())
     def stop_task(self):
         if self.runner.busy:
             self.state.set('Stopping • interrupted leases remain held until reviewed')
