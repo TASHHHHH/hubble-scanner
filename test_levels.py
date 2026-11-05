@@ -45,7 +45,7 @@ class LevelsTests(unittest.TestCase):
             q=Queue(Path(tmp)/'q')
             q.worker_token('old');q.worker_token('new','adaptive')
             self.assertEqual(q.worker_stages('old'),['wiki'])
-            self.assertEqual(q.worker_stages('new'),['archive_review','mast','wiki'])
+            self.assertEqual(q.worker_stages('new'),['archive_band','archive_review','mast','wiki'])
 
     def test_adaptive_http_assignment_and_wiki_fallback(self):
         import requests

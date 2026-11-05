@@ -37,9 +37,12 @@ RGB candidates; it does not perform image reduction or generate final RGB images
 
 ## Whole-frame search
 
-Use **Scan → Search SpaceCatalog in MAST** to download the versioned object and
-designation files, verify their SHA-256 checksums, and query MAST in batches. Results
-are saved as `results/spacecatalog_hst.jsonl` and `.csv`. The scan looks for public
+Use **Scan → Search SpaceCatalog in MAST** to seed 72 MAST archive query bands into
+the multi-PC queue. Connected workers query independent RA ranges in parallel. After
+they finish, choose **Collect results** to merge the observations, verify/download
+the pinned SpaceCatalog object and designation files, and perform the footprint and
+STScI Papertrack crossmatch on the coordinator. Results are saved as
+`results/spacecatalog_hst.jsonl` and `.csv`. The scan looks for public
 HST image footprints covering each target center and lists observation IDs and filters.
 It also writes the archive-matched subset to `results/spacecatalog_hst.review.csv`,
 one observation per row in `results/spacecatalog_hst.observations.csv`,

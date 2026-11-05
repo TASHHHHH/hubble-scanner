@@ -266,8 +266,10 @@ class App(tk.Tk):
     def catalog(self): self.run([command('scanner', 'catalog', '--out', self.workspace_path() / 'catalog.jsonl', *(['--wide'] if self.wide.get() else []))])
     def archive_sweep(self):
         root=self.workspace_path()
-        self.run([command('archive_sweep','--out',root/'results'/'spacecatalog_hst.jsonl',
-                          '--cache',root/'.cache'/'spacecatalog-hst')])
+        if not self.start_server():return
+        self.run([command('coordinator','--db',root/'queue.sqlite','archive-seed'),
+                  command('cluster_worker','--server','http://127.0.0.1:8765','--stages','archive_band',
+                          '--work-dir',root/'archive-worker')])
     def archive_review_queue(self):
         root=self.workspace_path();result=root/'results'/'spacecatalog_hst.jsonl'
         if not result.exists():
@@ -337,7 +339,7 @@ class App(tk.Tk):
         if not path: return
         try:
             url, token, ca = read_invite(path, self.workspace_path())
-            self.run([command('cluster_worker', '--server', url, '--stages', 'archive_review', 'mast', 'wiki',
+            self.run([command('cluster_worker', '--server', url, '--stages', 'archive_band', 'archive_review', 'mast', 'wiki',
                               '--work-dir', self.workspace_path() / 'worker')],
                      worker_token=token, ca_bundle=ca)
         except Exception as exc:
@@ -357,15 +359,24 @@ class App(tk.Tk):
         url=self.endpoint.get().strip();parsed=urlparse(url)
         if parsed.scheme!='https' and parsed.hostname not in ('localhost','127.0.0.1'):
             messagebox.showerror('HTTPS required','Remote workers must connect over HTTPS.');return
-        self.run([command('cluster_worker', '--server', url, '--stages','archive_review','mast','wiki','--work-dir', self.workspace_path() / 'worker')])
+        self.run([command('cluster_worker', '--server', url, '--stages','archive_band','archive_review','mast','wiki','--work-dir', self.workspace_path() / 'worker')])
     def local_scan(self):
         if self.start_server():
-            self.run([command('cluster_worker', '--server', 'http://127.0.0.1:8765','--stages','archive_review','mast','wiki', '--work-dir', self.workspace_path() / 'investigator-worker')],investigator=True)
+            self.run([command('cluster_worker', '--server', 'http://127.0.0.1:8765','--stages','archive_band','archive_review','mast','wiki', '--work-dir', self.workspace_path() / 'investigator-worker')],investigator=True)
     def status(self):
         self.run([command('app_status', '--server', self.endpoint.get().strip())])
     def collect(self):
+        from coordinator import Queue
+        status=Queue(self.workspace_path()/'queue.sqlite').status()
+        bands=[row for row in status['counts'] if row['stage']=='archive_band']
+        if bands and (len(bands)!=1 or bands[0]['state']!='done' or bands[0]['count']!=72):
+            messagebox.showinfo('Archive sweep still running',
+                'Wait for all 72 archive-band jobs to finish before collecting. Check the queue status and reconnect workers if jobs are held.')
+            return
         p = self.workspace_path() / 'results'
         self.run([command('coordinator', '--db', self.workspace_path() / 'queue.sqlite', 'export', '--out', p),
+                  command('archive_sweep','--out',p/'spacecatalog_hst.jsonl','--cache',self.workspace_path()/'.cache'/'spacecatalog-hst',
+                          '--observations-file',p/'archive_observations.jsonl'),
                   command('scanner', 'merge', '--catalog', p / 'catalog.jsonl', '--wiki-glob', p / 'wiki_coordinator.jsonl', '--mast-glob', p / 'mast_coordinator.jsonl', '--out', p / 'candidates.jsonl'),
                   command('footprint_groups', '--results', p / 'candidates.jsonl', '--out', p / 'filter_groups.jsonl')])
     def load_results(self):

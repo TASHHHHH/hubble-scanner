@@ -8,6 +8,11 @@ from runtime import atomic_json,write_rows,read_rows
 
 def execute(job,folder):
     payload=job['payload'];stage=job['stage'];folder=Path(folder)
+    if stage=='archive_band':
+        from archive_sweep import fetch_archive_band
+        root=Path(os.getenv('HUBBLE_CACHE_DIR',str(folder.parent/'cache')))
+        rows=fetch_archive_band(root,payload['ra_min'],payload['ra_max'])
+        return {'status':'ok','ra_min':payload['ra_min'],'ra_max':payload['ra_max'],'observations':rows}
     if stage=='quality':
         from fits_quality import assess,file_digest
         before={p:(Path(p).stat().st_size,Path(p).stat().st_mtime_ns) for p in payload['files']}

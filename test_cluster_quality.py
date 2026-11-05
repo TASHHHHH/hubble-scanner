@@ -102,6 +102,19 @@ class QualityTests(unittest.TestCase):
         self.assertEqual(flags({'INSTRUME':'WFC3','DETECTOR':'IR'}),(256,5120))
 
 class QueueTests(unittest.TestCase):
+    def test_archive_bands_are_durable_distributed_jobs_and_export(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            q=Queue(Path(tmp)/'q',mast_slots=2)
+            self.assertEqual(q.seed_archive_bands(),72)
+            claimed=q.claim('pc-1',['archive_band'])
+            self.assertEqual(claimed['payload']['ra_min'],0)
+            result={'status':'ok','ra_min':0,'ra_max':5,'observations':[{'s_ra':'2','s_dec':'20','s_region':'POLYGON ICRS 1 1 2 1 2 2'}]}
+            self.assertTrue(q.finish(claimed['key'],claimed['token'],result)['ok'])
+            exported=q.export(Path(tmp)/'out')
+            self.assertEqual(exported['archive_observations'],1)
+            from runtime import read_rows
+            self.assertEqual(len(list(read_rows(Path(tmp)/'out'/'archive_observations.jsonl'))),1)
+
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.root=Path(self.temp.name);self.q=Queue(self.root/'queue.db',lease_seconds=3,wiki_slots=10)
     def tearDown(self):self.temp.cleanup()

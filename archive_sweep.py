@@ -56,26 +56,29 @@ def run_tap_band(session, lower, upper):
     return result.text
 
 
-def fetch_archive(cache_dir):
+def fetch_archive_band(cache_dir, lower, upper):
     # Version the cache because its schema includes proposal IDs used by Papertrack.
     cache=Path(cache_dir)/'mast-hst-public-images-v2'
     cache.mkdir(parents=True,exist_ok=True)
     session=requests.Session()
     session.headers['User-Agent']='HubbleScanner/1.0 (public HST archive crossmatch)'
+    if lower<0 or upper>360 or lower>=upper:raise ValueError('Invalid RA band')
+    path=cache/f'ra-{lower:03d}-{upper:03d}.csv'
+    if cache_is_fresh(path): raw=path.read_text(encoding='utf-8')
+    else:
+        print(f'Querying MAST image archive, RA {lower}-{upper} degrees',flush=True)
+        raw=run_tap_band(session,lower,upper)
+        path.write_text(raw,encoding='utf-8')
+    rows=list(csv.DictReader(io.StringIO(raw)))
+    if len(rows)>=100000:
+        raise RuntimeError(f'MAST RA band {lower}-{upper} hit the 100000-row cap, refusing incomplete results')
+    return rows
+
+
+def fetch_archive(cache_dir):
     records=[]
     for band in range(36):
-        lower,upper=band*10,(band+1)*10
-        path=cache/f'ra-{lower:03d}-{upper:03d}.csv'
-        if cache_is_fresh(path):
-            raw=path.read_text(encoding='utf-8')
-        else:
-            print(f'Querying MAST image archive, RA {lower}-{upper} degrees',flush=True)
-            raw=run_tap_band(session,lower,upper)
-            path.write_text(raw,encoding='utf-8')
-        rows=list(csv.DictReader(io.StringIO(raw)))
-        if len(rows)>=100000:
-            raise RuntimeError(f'MAST RA band {lower}-{upper} hit the 100000-row cap, refusing incomplete results')
-        records.extend(rows)
+        records.extend(fetch_archive_band(cache_dir,band*10,(band+1)*10))
     return records
 
 
@@ -118,10 +121,12 @@ def fetch_papers(program_ids,cache_dir,session=None):
             if page>=100: raise RuntimeError('MAST Papertrack pagination exceeded 100 pages for one batch')
     return papers
 
-def scan(objects,out,cache_dir):
+def scan(objects,out,cache_dir,observations_file=None):
     from footprint_groups import parse_sregion
     objects=[o for o in objects if o.get('ra_deg') is not None and o.get('dec_deg') is not None]
-    observations=fetch_archive(cache_dir)
+    if observations_file:
+        observations=[r for r in __import__('runtime').read_rows(observations_file)]
+    else: observations=fetch_archive(cache_dir)
     observations=[r for r in observations if r.get('s_region') and r.get('s_ra') and r.get('s_dec')]
     ra=np.array([float(r['s_ra']) for r in observations]);dec=np.array([float(r['s_dec']) for r in observations])
     coords=SkyCoord(ra*u.deg,dec*u.deg)
@@ -296,7 +301,8 @@ if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--out',default='out/spacecatalog-hst.jsonl')
     p.add_argument('--cache',default='.cache/spacecatalog-hst')
+    p.add_argument('--observations-file')
     a=p.parse_args()
     from catalogs import spacecatalog_rows
     objects=spacecatalog_rows(Path(a.cache).parent)
-    scan(objects,a.out,a.cache)
+    scan(objects,a.out,a.cache,a.observations_file)

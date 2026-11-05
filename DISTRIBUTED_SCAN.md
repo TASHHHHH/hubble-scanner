@@ -2,7 +2,7 @@
 
 ## Backlog levels
 
-The coordinator counts unique unfinished MAST and archive-review jobs (ready plus running), not
+The coordinator counts unique unfinished archive-band, MAST and archive-review jobs (ready plus running), not
 all historical Wikipedia gaps or catalog aliases. All PCs with adaptive credentials
 can investigate. Each worker runs one task at a time.
 
@@ -33,7 +33,7 @@ If the worker cannot connect, check **View Logs**. Check that both PCs are on th
 
 ## Manual coordinator setup
 
-Install with `setup.ps1 -AI`, build/import a catalog, seed it and start the local
+Install with `setup.ps1 -AI`, import a catalog, seed it and start the local
 coordinator. Under **Workers → Manual connection settings**, select **Issue worker token** once for each PC. New credentials allow
 Wikipedia and MAST investigation only, not quality tasks, administration, or other
 workers' jobs. Old wiki-only credentials stay restricted; reissue them to opt in.
@@ -59,7 +59,7 @@ Install AI dependencies (`setup.ps1 -AI`), enter its unique token and
 
 ```powershell
 $env:HUBBLE_QUEUE_TOKEN = '<this PC worker credential>'
-.\.venv\Scripts\python.exe cluster_worker.py --server https://YOUR-HOST:8766 --stages archive_review mast wiki --work-dir work\adaptive
+.\.venv\Scripts\python.exe cluster_worker.py --server https://YOUR-HOST:8766 --stages archive_band archive_review mast wiki --work-dir work\adaptive
 ```
 
 The coordinator fills available investigation slots first, then assigns Wikipedia
@@ -67,6 +67,12 @@ jobs. One task must finish before the worker changes roles. The coordinator PC c
 also participate using **Join local pool**. A private CA can be supplied through
 HUBBLE_CA_BUNDLE; TLS verification is never disabled. Tokens entered manually are masked. Invite files hold the per-PC token. Store any externally managed
 worker startup credentials securely; Telegram credentials are a different secret.
+
+The **Search SpaceCatalog in MAST** button seeds 72 independent 5-degree RA archive
+queries. Local and invited PCs claim these jobs from the shared queue. Use **Collect
+results** after they finish; it merges the returned observations and performs the
+catalog footprint crossmatch and STScI Papertrack lookup on the coordinator. Raw
+archive results are saved to `results/archive_observations.jsonl`.
 
 MAST investigations require two distinct bands whose common footprint covers the
 target center. Only archive JPEG/PNG previews are downloaded, never science FITS.
