@@ -99,6 +99,9 @@ proposal ID) to the shared queue. Connected adaptive PCs review their MAST filte
 previews in parallel. Results are written to `results/archive_review_results.jsonl`;
 the publication finding remains a proposal-level hint for manual paper review.
 Outside PCs require HTTPS and individual revocable credentials. Existing wiki-only
+Telegram commands on the coordinator support live queue/worker status, HST obsid
+lookups, starting/collecting the archive sweep, pausing/resuming new claims, and
+adjusting investigator concurrency. Send `/help` to the configured bot chat.
 tokens remain restricted until reissued. Update every PC before starting this mode.
 
 ## Research limits

@@ -208,7 +208,12 @@ class App(tk.Tk):
         try:
             from secret_store import save
             save(token,chat)
-            messagebox.showinfo('Saved','Encrypted for this Windows user. Workers never receive the Telegram token.')
+            if self.server:
+                from notification_service import start
+                if self.notification_stop:self.notification_stop.set()
+                from coordinator import Queue
+                self.notification_stop=start(Queue(self.workspace_path()/'queue.sqlite'))
+            messagebox.showinfo('Saved','Encrypted for this Windows user. Workers never receive the Telegram token. Start or restart the coordinator, then send /help to your bot for Telegram controls.')
         except Exception:messagebox.showerror('Not saved','Could not save encrypted notification settings.')
 
     def live_tab(self):

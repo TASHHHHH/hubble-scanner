@@ -36,6 +36,7 @@ class LevelsTests(unittest.TestCase):
             with patch('secret_store.load',return_value={'token':'PRIVATE','chat':'123'}),patch('investigator.notify',return_value='sent') as send:
                 self.assertTrue(deliver_one(q));self.assertFalse(deliver_one(q))
                 send.assert_called_once()
+                self.assertIn('Observation IDs:',send.call_args.args[0])
             with q.db() as c:
                 self.assertEqual(c.execute('SELECT state FROM notifications').fetchone()[0],'sent')
             self.assertNotIn('PRIVATE',str(j))

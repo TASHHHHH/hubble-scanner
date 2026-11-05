@@ -94,6 +94,15 @@ outside this repository, using Windows DPAPI current-user encryption. They are
 never sent to a worker or included in a task payload. Previously documented
 Telegram environment variables are no longer used; remove them from startup scripts.
 
+The coordinator also polls Telegram for commands in the configured private chat.
+Send `/help` for commands: `/status`, `/queue`, `/workers`, `/recent`,
+`/candidate OBJECT_ID`, `/obsid OBSERVATION_ID`, `/search`, `/collect`,
+`/pause [all|archive|wiki]`, `/resume [all|archive|wiki]`, `/limit 1-10`, and `/test`.
+Run one coordinator process per bot token; another `getUpdates` poller can cause a
+Telegram 409 conflict. `/pause` stops new task claims, while already-running tasks
+finish normally. The workers list shows active and recently polling PCs. Target
+details include MAST observation IDs, filters, instruments, and exposure times.
+
 DPAPI protects the saved file, not a compromised coordinator: software running as
 the same Windows user can decrypt it. Keep the coordinator account trusted.
 Reference: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptprotectdata
@@ -131,7 +140,7 @@ coordinate. Install this updated source on every PC, not only the coordinator.
 
 ## Validation
 
-68 tests pass on Windows, including real HTTP adaptive assignments (two MAST jobs
+84 tests pass on Windows, including real HTTP adaptive assignments (two MAST jobs
 and one Wikipedia fallback at backlog 10), duplicate fencing, draining on scale-down,
 credential roles, centralized idempotent notifications, and actual Windows DPAPI
 round-trip/tamper rejection. DINOv2 was previously run on CPU with a synthetic

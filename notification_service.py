@@ -25,5 +25,8 @@ def start(queue):
         while not stop.wait(2):
             try:deliver_one(queue)
             except Exception:pass  # Never log credential-related exception contents.
-    thread=threading.Thread(target=loop,daemon=True);thread.start()
+    thread=threading.Thread(target=loop,name='telegram-notification-outbox',daemon=True);thread.start()
+    from telegram_control import poll
+    control=threading.Thread(target=poll,args=(queue,stop),name='telegram-control-poll',daemon=True)
+    control.start()
     return stop

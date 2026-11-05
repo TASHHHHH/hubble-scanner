@@ -45,6 +45,7 @@ class Queue:
                 CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS worker_permissions(name TEXT PRIMARY KEY,role TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS notifications(job_key TEXT PRIMARY KEY,message TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'pending');
+                CREATE TABLE IF NOT EXISTS workers(name TEXT PRIMARY KEY,stages TEXT NOT NULL,last_seen REAL NOT NULL);
                 CREATE INDEX IF NOT EXISTS jobs_claim ON jobs(state,stage,available);''')
     @contextmanager
     def db(self):
@@ -136,8 +137,13 @@ class Queue:
         if not worker or len(worker)>200 or any(s not in self.slots for s in stages):raise ValueError('Invalid worker/stages')
         with self.db() as c:
             c.execute('BEGIN IMMEDIATE');self.expire(c)
+            c.execute('INSERT OR REPLACE INTO workers(name,stages,last_seen) VALUES(?,?,?)',
+                      (worker,encoded(stages),time.time()))
             if c.execute("SELECT 1 FROM jobs WHERE owner=? AND state='running'",(worker,)).fetchone():return None
+            setting=c.execute("SELECT value FROM settings WHERE key='paused_stages'").fetchone()
+            paused=set(json.loads(setting['value'])) if setting else set()
             for stage in stages:
+                if 'all' in paused or stage in paused:continue
                 if stage in ('mast','archive_review','archive_band'):
                     active=c.execute("SELECT count(*) FROM jobs WHERE stage IN ('mast','archive_review','archive_band') AND state='running'").fetchone()[0]
                 else:
@@ -157,6 +163,8 @@ class Queue:
             c.execute('BEGIN IMMEDIATE');self.expire(c)
             n=c.execute("UPDATE jobs SET lease_until=?,updated=? WHERE key=? AND token=? AND state='running'",(time.time()+self.lease_seconds,time.time(),job_key,token)).rowcount
             if n!=1:raise ValueError('Lease lost')
+            owner=c.execute('SELECT owner FROM jobs WHERE key=?',(job_key,)).fetchone()['owner']
+            c.execute('UPDATE workers SET last_seen=? WHERE name=?',(time.time(),owner))
         return {'ok':True}
     def finish(self,job_key,token,result=None,error=None):
         with self.db() as c:
@@ -189,7 +197,7 @@ class Queue:
                     pair,_=match_pair({**obj,'observations':result.get('observations',[])})
                     if pair:
                         inv=result['investigation']
-                        message=f"Hubble candidate: {obj['id']}\nBands: {', '.join(pair['filters'])}\nFootprint overlap: {pair['overlap_fraction']:.0%}\nProcessing: {str(inv.get('status','unknown'))[:80]}\nWikipedia status: {result.get('wiki_status')}. Publication status: not assessed."
+                        message=f"Hubble candidate: {obj['id']}\nBands: {', '.join(pair['filters'])}\nObservation IDs: {', '.join(pair['obsids'])}\nFootprint overlap: {pair['overlap_fraction']:.0%}\nProcessing: {str(inv.get('status','unknown'))[:80]}\nWikipedia status: {result.get('wiki_status')}. Publication status: not assessed."
                         if inv.get('ranking'):message+='\nDINOv2 worker-local diversity: '+str(inv['ranking'].get('visual_diversity','unknown'))[:30]+' (not novelty)'
                         c.execute('INSERT OR IGNORE INTO notifications(job_key,message) VALUES(?,?)',(job_key,message))
         return {'ok':True}
@@ -197,6 +205,23 @@ class Queue:
     def configure_levels(self,step=10,maximum=5):
         if not 1<=step<=10000 or not 1<=maximum<=10:raise ValueError('Invalid level limits')
         with self.db() as c:c.execute("INSERT OR REPLACE INTO settings VALUES('levels',?)",(encoded({'step':step,'maximum':maximum}),))
+
+    def set_worker_limit(self,maximum):
+        if not 1<=maximum<=10:raise ValueError('Worker limit must be between 1 and 10')
+        with self.db() as c:
+            row=c.execute("SELECT value FROM settings WHERE key='levels'").fetchone()
+            config=json.loads(row['value']) if row else {'step':10}
+            config['maximum']=maximum
+            c.execute("INSERT OR REPLACE INTO settings VALUES('levels',?)",(encoded(config),))
+
+    def set_paused(self,stages):
+        allowed={'all','wiki','mast','archive_review','archive_band','quality'}
+        stages=sorted(set(stages))
+        if not set(stages)<=allowed:raise ValueError('Unknown stage to pause')
+        if 'all' in stages:stages=['all']
+        with self.db() as c:
+            if stages:c.execute("INSERT OR REPLACE INTO settings VALUES('paused_stages',?)",(encoded(stages),))
+            else:c.execute("DELETE FROM settings WHERE key='paused_stages'")
 
     def level(self,c):
         config=c.execute("SELECT value FROM settings WHERE key='levels'").fetchone()
@@ -247,9 +272,89 @@ class Queue:
     def status(self):
         with self.db() as c:
             self.expire(c)
+            paused=c.execute("SELECT value FROM settings WHERE key='paused_stages'").fetchone()
+            workers=[]
+            for row in c.execute('SELECT name,stages,last_seen FROM workers ORDER BY last_seen DESC LIMIT 20'):
+                active=c.execute("SELECT stage,payload,lease_until FROM jobs WHERE owner=? AND state='running'",(row['name'],)).fetchone()
+                workers.append({'name':row['name'],'stages':json.loads(row['stages']),
+                    'state':'working' if active else ('online' if time.time()-row['last_seen']<45 else 'offline'),
+                    'current_stage':active['stage'] if active else None,
+                    'current_payload':json.loads(active['payload']) if active else None,
+                    'lease_until':active['lease_until'] if active else None,
+                    'last_seen':row['last_seen']})
             return {'level':self.level(c),'counts':[dict(r) for r in c.execute('SELECT stage,state,count(*) AS count FROM jobs GROUP BY stage,state')],
                     'attention':[dict(r) for r in c.execute("SELECT key,stage,state,owner,attempts,error FROM jobs WHERE state IN ('failed','interrupted')")],
-                    'targets':c.execute('SELECT count(*) FROM targets').fetchone()[0]}
+                    'targets':c.execute('SELECT count(*) FROM targets').fetchone()[0],
+                    'paused_stages':json.loads(paused['value']) if paused else [],'workers':workers}
+
+    def candidate_detail(self,ident):
+        with self.db() as c:
+            row=c.execute("SELECT t.id,t.object,w.result AS wiki,m.state AS mast_state,m.result AS mast FROM targets t JOIN jobs w ON w.key=t.wiki_key LEFT JOIN jobs m ON m.key=t.mast_key WHERE t.id=? COLLATE NOCASE",(ident,)).fetchone()
+            if not row:
+                row=None
+        if not row:
+            from runtime import read_rows
+            path=Path(self.path).parent/'results'/'spacecatalog_hst.jsonl'
+            for item in read_rows(path) if path.exists() else ():
+                if str(item.get('id','')).casefold()==str(ident).casefold():
+                    observations=[];table=path.with_name('spacecatalog_hst.observations.csv')
+                    if table.exists():
+                        import csv
+                        with table.open(encoding='utf-8-sig',newline='') as stream:
+                            observations=[r for r in csv.DictReader(stream) if r.get('object_id')==item.get('id')]
+                    return {**item,'wiki_status':'not_checked','mast_state':'archive_sweep_complete',
+                        'observation_count':item.get('mast_observation_count',0),
+                        'filters':item.get('mast_filters',[]),'observations':[
+                            {'obsid':r.get('obsid'),'obs_id':r.get('obs_id'),'filter':r.get('filters'),
+                             'instrument':r.get('instrument_name'),'exptime':float(r['t_exptime']) if r.get('t_exptime') else 0}
+                            for r in observations], 'observation_list_truncated':False}
+            return None
+        item=json.loads(row['object']);wiki=json.loads(row['wiki']) if row['wiki'] else {}
+        mast=json.loads(row['mast']) if row['mast'] else {}
+        return {**item,'wiki_status':wiki.get('wiki_status','pending'),'mast_state':row['mast_state'] or 'not_queued',
+                'observation_count':mast.get('observation_count',0),'filters':mast.get('filters',[]),
+                'observations':mast.get('observations',[]),'observation_list_truncated':mast.get('observation_list_truncated',False),
+                'investigation':mast.get('investigation',{}),'checked_at_unix':mast.get('checked_at_unix')}
+
+    def recent_candidates(self,limit=8):
+        with self.db() as c:
+            rows=c.execute("SELECT payload,result FROM jobs WHERE stage='mast' AND state='done' ORDER BY updated DESC LIMIT ?",(max(1,min(20,limit)),)).fetchall()
+            result=[]
+            for row in rows:
+                item=json.loads(row['payload'])['object'];mast=json.loads(row['result'])
+                result.append({**item,**mast})
+        if result:return result
+        from runtime import read_rows
+        path=Path(self.path).parent/'results'/'spacecatalog_hst.jsonl'
+        if path.exists():
+            result=[{**row,'observation_count':row.get('mast_observation_count',0),
+                     'filters':row.get('mast_filters',[]),'observations':row.get('mast_obsids',[])}
+                    for row in read_rows(path) if row.get('mast_observation_count')]
+        return result[:max(1,min(20,limit))]
+
+    def observation_detail(self,obsid):
+        with self.db() as c:
+            row=c.execute("""SELECT t.id,j.result FROM jobs j JOIN targets t ON t.mast_key=j.key,
+                json_each(j.result,'$.observations') o
+                WHERE j.stage='mast' AND j.state='done'
+                AND (json_extract(o.value,'$.obsid')=? OR json_extract(o.value,'$.obs_id')=?) LIMIT 1""",
+                (str(obsid),str(obsid))).fetchone()
+            if not row:
+                row=None
+        if not row:
+            import csv
+            path=Path(self.path).parent/'results'/'spacecatalog_hst.observations.csv'
+            if path.exists():
+                with path.open(encoding='utf-8-sig',newline='') as stream:
+                    for observation in csv.DictReader(stream):
+                        if str(observation.get('obsid'))==str(obsid) or str(observation.get('obs_id'))==str(obsid):
+                            return {'id':observation.get('object_id'),'filter':observation.get('filters'),
+                                'instrument':observation.get('instrument_name'),'exptime':float(observation['t_exptime']) if observation.get('t_exptime') else 0,
+                                'obs_id':observation.get('obs_id')}
+            return None
+        observation=next((x for x in json.loads(row['result']).get('observations',[])
+                          if str(x.get('obsid'))==str(obsid) or str(x.get('obs_id'))==str(obsid)),None)
+        return {'id':row['id'],**(observation or {})}
     def candidates(self):
         with self.db() as c:
             rows=c.execute("SELECT t.id,t.object,m.state,m.result,m.error,(SELECT state FROM notifications n WHERE n.job_key=m.key) AS delivery,w.result AS wiki_result FROM targets t JOIN jobs w ON w.key=t.wiki_key LEFT JOIN jobs m ON m.key=t.mast_key WHERE w.state='done' AND (json_extract(w.result,'$.wiki_status')='not_detected' OR (json_extract(w.result,'$.wiki_status')='no_article' AND json_extract(w.result,'$.catalog_verified')=1)) ORDER BY w.updated DESC LIMIT 2000").fetchall()
