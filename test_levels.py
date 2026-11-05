@@ -32,7 +32,9 @@ class LevelsTests(unittest.TestCase):
             with q.db() as c:q.add(c,'mast:1','mast',{'object':target})
             j=q.claim('worker',['mast'])
             result={**target,'investigation':{'match':True,'status':'matched'}}
-            q.finish(j['key'],j['token'],result);q.finish(j['key'],j['token'],result)
+            with patch('investigator.match_pair',return_value=({'filters':['F435W','F606W'],
+                    'overlap_fraction':1.0,'obsids':['100','101']},[])):
+                q.finish(j['key'],j['token'],result);q.finish(j['key'],j['token'],result)
             with patch('secret_store.load',return_value={'token':'PRIVATE','chat':'123'}),patch('investigator.notify',return_value='sent') as send:
                 self.assertTrue(deliver_one(q));self.assertFalse(deliver_one(q))
                 send.assert_called_once()
