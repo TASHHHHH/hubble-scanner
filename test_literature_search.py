@@ -5,15 +5,19 @@ from pathlib import Path
 from unittest.mock import Mock
 
 from runtime import read_rows,write_rows
-from literature_search import make_query,run,search_ads
+from literature_search import make_query,names_for,run,search_ads
 
 
 class LiteratureSearchTests(unittest.TestCase):
     def test_query_uses_ads_object_tags_and_exact_text_aliases(self):
         query=make_query(['NGC 224','Andromeda Galaxy'])
         self.assertIn('database:astronomy',query)
-        self.assertIn('object:"NGC 224"',query)
-        self.assertIn('full:"Andromeda Galaxy"',query)
+        self.assertIn('object:("NGC 224" OR "Andromeda Galaxy")',query)
+        self.assertIn('full:("NGC 224" OR "Andromeda Galaxy")',query)
+
+    def test_search_names_exclude_catalog_source_and_internal_id(self):
+        self.assertEqual(names_for({'wiki_titles':['HIP 23692'],'aliases':['HD 123'],
+            'source_name':'HYG Database v4.1','id':'SC-hip-23692'}),['HIP 23692','HD 123'])
 
     def test_zero_archive_matches_fails_instead_of_reporting_zero_of_zero(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -37,6 +41,14 @@ class LiteratureSearchTests(unittest.TestCase):
         self.assertEqual(result,again)
         self.assertEqual(session.get.call_count,1)
         self.assertEqual(result['docs'][0]['bibcode'],'2025ApJ...123..456A')
+
+    def test_bad_query_reports_ads_error_detail_without_retrying(self):
+        session=Mock();response=Mock();response.status_code=400
+        response.json.return_value={'error':'Syntax error near field group'}
+        session.get.return_value=response
+        with tempfile.TemporaryDirectory() as tmp, self.assertRaisesRegex(RuntimeError,'Syntax error near field group'):
+            search_ads('bad query','secret',tmp,session)
+        self.assertEqual(session.get.call_count,1)
 
     def test_run_distinguishes_papers_no_match_and_lookup_failure(self):
         session=Mock()

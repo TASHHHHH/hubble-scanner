@@ -20,26 +20,29 @@ FIELDS = ('bibcode,title,author,pubdate,pub,doi,abstract,keyword,property')
 
 def names_for(row):
     names=[]
-    for value in [*(row.get('wiki_titles') or []), *(row.get('aliases') or []),
-                  row.get('source_name'), row.get('id')]:
+    # source_name identifies the upstream catalog (e.g. "HYG Database v4.1"),
+    # and synthetic SC-* ids are internal keys; neither is a sky-object alias.
+    for value in [*(row.get('wiki_titles') or []), *(row.get('aliases') or [])]:
         if not value: continue
         value=' '.join(str(value).split()).strip()
         if value and value.casefold() not in {n.casefold() for n in names}:
             names.append(value)
+    if not names and row.get('id'):
+        names.append(' '.join(str(row['id']).split()).strip())
     # Giant alias lists make overly broad ADS queries. Prefer the catalog's
     # displayed names, plus a few alternate designations.
     return names[:6]
 
 
 def make_query(names):
-    terms=[]
+    phrases=[]
     for name in names:
         phrase=name.replace('\\',' ').replace('"',' ').strip()
         if not phrase: continue
-        safe='"'+phrase+'"'
-        terms.extend((f'object:{safe}',f'full:{safe}'))
-    if not terms: raise ValueError('Target has no searchable names')
-    return 'database:astronomy AND ('+' OR '.join(terms)+')'
+        phrases.append('"'+phrase+'"')
+    if not phrases: raise ValueError('Target has no searchable names')
+    alternatives=' OR '.join(phrases)
+    return f'database:astronomy AND (object:({alternatives}) OR full:({alternatives}))'
 
 
 def _cache_path(cache_dir, query):
@@ -69,7 +72,17 @@ def search_ads(query, token, cache_dir, session=None, rows=25, retries=3):
             if response.status_code==429:
                 raise RuntimeError('ADS rate limit reached (HTTP 429); wait before resuming.')
             if response.status_code>=400:
-                detail=' '.join(str(getattr(response,'text','')).split())[:240]
+                try:
+                    body=response.json()
+                    detail=''
+                    if isinstance(body,dict):
+                        nested=body.get('response')
+                        detail=body.get('error') or body.get('message')
+                        if not detail and isinstance(nested,dict): detail=nested.get('error')
+                    if isinstance(detail,(dict,list)): detail=json.dumps(detail,ensure_ascii=False)
+                except (ValueError,AttributeError): detail=''
+                if not detail: detail=' '.join(str(getattr(response,'text','')).split())
+                detail=str(detail).replace(token,'[redacted]')[:1000]
                 last_error=f'ADS HTTP {response.status_code}'+(f': {detail}' if detail else '')
                 if response.status_code<500 and response.status_code!=408:
                     raise RuntimeError('ADS rejected the search request. '+last_error)
