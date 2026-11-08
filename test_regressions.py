@@ -158,6 +158,16 @@ class GeometryTests(unittest.TestCase):
         self.assertEqual(fg.angular_wavelength_nm('F122M'),122)
         self.assertEqual(fg.angular_wavelength_nm('F110W'),1100)
         self.assertEqual(fg.angular_wavelength_nm('F222M'),2220)
+        self.assertEqual(fg.filter_names('FQ508N'),['FQ508N'])
+        self.assertEqual(fg.angular_wavelength_nm('FQ508N'),508)
+
+    def test_quad_filter_can_join_overlapping_color_groups(self):
+        x=item();x['observations']=[
+            {'obsid':'fq','filter':'FQ508N','s_region':REGION,'exptime':100},
+            {'obsid':'red','filter':'F814W','s_region':REGION,'exptime':100},
+            {'obsid':'blue','filter':'F275W','s_region':REGION,'exptime':100}]
+        groups,_=fg.grouped_candidates(x)
+        self.assertTrue(any('FQ508N' in group['filters_rgb'] for group in groups))
 
     def test_ambiguous_multi_filter_not_three_exposures(self):
         x=item();x['observations']=[{'obsid':'1','filter':'F435W;F606W;F814W','s_region':REGION}]

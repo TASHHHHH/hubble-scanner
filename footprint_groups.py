@@ -16,12 +16,13 @@ from pathlib import Path
 from shapely.geometry import Polygon, Point
 
 BAD_FILTER = re.compile(r'(CLEAR|GRISM|PRISM|G\d{3}|BLOCK|POL|UNKNOWN|NONE|N/A)', re.I)
-FILTER_CODE = re.compile(r'^F(\d{3,4})([A-Z0-9]*)$', re.I)
+FILTER_CODE = re.compile(r'^FQ?\d{3,4}[A-Z0-9]*$', re.I)
+WAVELENGTH_CODE = re.compile(r'^FQ?(\d{3,4})', re.I)
 
 
 def angular_wavelength_nm(filt):
     """Approximate HST filter center solely for suggested ordering (not calibration)."""
-    m = FILTER_CODE.match(filt.upper().strip())
+    m = WAVELENGTH_CODE.match(filt.upper().strip())
     if not m:
         return None
     n = int(m.group(1))
