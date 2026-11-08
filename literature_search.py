@@ -108,7 +108,27 @@ def _paper(doc):
             'refereed':'refereed' in (doc.get('property') or [])}
 
 
-def run(input_path, out_path, token, cache_dir, delay=0.25, limit=0, session=None):
+def telegram_notify(message):
+    """Send to the locally configured Telegram chat; never fail the scan."""
+    try:
+        from secret_store import load
+        from investigator import notify
+        credentials=load()
+        return notify(message,credentials) if credentials else 'not_configured'
+    except Exception:
+        return 'failed'
+
+
+def _progress_text(checked,total,counts,leads=()):
+    lines=[f'ADS literature search: {checked}/{total} objects checked',
+           f"Since last update — paper matches: {counts['papers_found']} | no name match: {counts['no_name_match']} | errors: {counts['lookup_failed']}"]
+    if leads:
+        lines.append('Potential manual-review leads (no Papertrack program paper + no ADS name match): '+', '.join(leads[:10]))
+        lines.append('These are leads to review, not confirmed unpublished objects or discoveries.')
+    return '\n'.join(lines)
+
+
+def run(input_path, out_path, token, cache_dir, delay=0.25, limit=0, session=None, notifier=None):
     if not token: raise ValueError('Set HUBBLE_ADS_TOKEN to your NASA ADS API token.')
     rows=[r for r in read_rows(input_path) if int(r.get('mast_observation_count') or 0)>0]
     out_path=Path(out_path);out_path.parent.mkdir(parents=True,exist_ok=True)
@@ -117,13 +137,19 @@ def run(input_path, out_path, token, cache_dir, delay=0.25, limit=0, session=Non
         for row in read_rows(out_path):
             if row.get('id') and row.get('literature_status') in ('papers_found','no_name_match'):
                 prior[row['id']]=row
-    processed=0
+    processed=0;batch_counts={'papers_found':0,'no_name_match':0,'lookup_failed':0};batch_leads=[]
+    notifier=notifier or telegram_notify
+    def report(text):
+        try:notifier(text)
+        except Exception:pass
+    searchable_total=sum(1 for r in rows if r.get('id') not in prior)
     for index,row in enumerate(rows):
         if row.get('id') in prior: continue
         if limit and processed>=limit: break
         names=names_for(row)
         result={k:row.get(k) for k in ('id','source_name','wiki_titles','aliases','ra_deg','dec_deg',
-                                         'mast_observation_count','mast_program_ids','mast_obsids')}
+                                         'mast_observation_count','mast_program_ids','mast_obsids',
+                                         'publication_status','program_paper_count','object_name_in_paper_title')}
         result['search_names']=names
         try:
             query=make_query(names)
@@ -134,16 +160,25 @@ def run(input_path, out_path, token, cache_dir, delay=0.25, limit=0, session=Non
         except RuntimeError as exc:
             result.update({'literature_status':'lookup_failed','literature_error':str(exc)})
             prior[row['id']]=result
+            batch_counts['lookup_failed']+=1
             print(f"ADS lookup stopped at {row.get('id')}: {exc}",flush=True)
+            report(_progress_text(processed+1,searchable_total,batch_counts))
             # A lookup error is usually shared by the API, credentials or query
             # builder. Checkpoint it and stop instead of issuing thousands more.
             break
         prior[row['id']]=result
         processed+=1
+        batch_counts[result['literature_status']]+=1
+        if (result['literature_status']=='no_name_match'
+                and row.get('publication_status')=='no_published_science_paper_found_for_programs'):
+            batch_leads.append(str(row.get('id','unknown')))
         # Checkpoint after every object; existing ADS responses are cached too.
         write_rows(out_path, sorted(prior.values(),key=lambda r:str(r.get('id',''))))
         if delay and index+1<len(rows):time.sleep(delay)
         if (processed%100)==0:print(f'Literature searched: {len(prior)} / {len(rows)}',flush=True)
+        if processed%10==0:
+            report(_progress_text(processed,searchable_total,batch_counts,batch_leads))
+            batch_counts={'papers_found':0,'no_name_match':0,'lookup_failed':0};batch_leads=[]
     write_rows(out_path, sorted(prior.values(),key=lambda r:str(r.get('id',''))))
     papers_path=out_path.with_name(out_path.stem+'.papers.csv')
     columns=('object_id','object_names','literature_status','bibcode','title','first_author',
@@ -159,6 +194,8 @@ def run(input_path, out_path, token, cache_dir, delay=0.25, limit=0, session=Non
             for status in ('papers_found','no_name_match','lookup_failed')}
     print(f'Complete so far: {len(prior)} / {len(rows)}; '+', '.join(f'{k}={v}' for k,v in counts.items()),flush=True)
     print(f'Results: {out_path}\nPaper details: {papers_path}',flush=True)
+    if processed%10 or not rows:
+        report(_progress_text(processed,searchable_total,batch_counts,batch_leads))
     return counts
 
 

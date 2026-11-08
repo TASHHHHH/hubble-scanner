@@ -75,6 +75,11 @@ be ambiguous, papers can use other designations, and ADS coverage is incomplete.
 Review the returned papers and their HST observations before judging whether an
 object is overlooked. The [ADS search syntax](https://adsabs.github.io/help/search/search-syntax)
 documents the `object:` and `full:` fields used here.
+When Telegram is configured on the same Windows user account under **Workers →
+Encrypted Telegram settings**, ADS search sends a summary every ten objects, including
+paper matches, no-name matches, lookup errors, and potential review leads where both
+ADS and proposal-level Papertrack found no paper. Those leads are not confirmed
+unpublished objects or discoveries.
 
 Imported rows retain their source name, URL, license, and retrieval date. SpaceCatalog
 passes through upstream licensing terms, so consult the per-row source fields before
