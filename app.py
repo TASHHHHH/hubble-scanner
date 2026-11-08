@@ -143,6 +143,7 @@ class App(tk.Tk):
             ('Try offline demo', 'Synthetic catalog, three FITS bands and sample results. No API calls.', self.demo),
             ('Build catalog', 'Build the Messier, NGC and IC input list with the selected catalog coverage.', self.catalog),
             ('Search SpaceCatalog in MAST', 'Match public Hubble images and check linked STScI papers by proposal; review object-level matches.', self.archive_sweep),
+            ('Search object literature in ADS', 'Search astronomy papers for the names of archive-matched objects; review every hit.', self.search_literature),
             ('Queue no-paper targets for PC review', 'Send archive matches with no linked science paper to connected PCs for preview and filter review.', self.archive_review_queue),
             ('Import catalog & seed queue', 'Choose JSONL from a previous run. Known aliases and identical queries are deduplicated.', self.seed),
             ('Join local pool', 'Scan Wikipedia or investigate candidates according to the backlog level.', self.local_scan),
@@ -255,7 +256,7 @@ class App(tk.Tk):
         if os.name == 'nt': os.startfile(path)
         else: messagebox.showinfo('Workspace', str(path))
 
-    def run(self, commands, investigator=False, *, worker_token=None, ca_bundle=None):
+    def run(self, commands, investigator=False, *, worker_token=None, ca_bundle=None, extra_env=None):
         try:
             path = self.workspace_path()
             env = os.environ.copy(); env['HUBBLE_CACHE_DIR'] = str(path / '.cache'); env['HUBBLE_QUEUE_TOKEN'] = worker_token or self.token.get()
@@ -263,6 +264,7 @@ class App(tk.Tk):
             env.pop('HUBBLE_INVESTIGATE_DIR',None)
             if investigator:env['HUBBLE_INVESTIGATE_DIR']=str(path/'investigations')
             env.pop('HUBBLE_TELEGRAM_TOKEN',None);env.pop('HUBBLE_TELEGRAM_CHAT_ID',None)
+            if extra_env: env.update(extra_env)
             self.runner.start(commands, path, env)
             self.path_entry.configure(state='disabled'); self.progress.start(12); self.state.set('Working • details below')
         except Exception as exc: messagebox.showerror('Cannot start', str(exc))
@@ -281,6 +283,19 @@ class App(tk.Tk):
             messagebox.showinfo('Archive scan required','Run Search SpaceCatalog in MAST first.');return
         self.run([command('coordinator','--db',root/'queue.sqlite','archive-review-seed',
                           '--results',result)])
+    def search_literature(self):
+        root=self.workspace_path();results=root/'results'
+        source=results/'spacecatalog_hst.jsonl'
+        if not source.exists():
+            messagebox.showinfo('Archive scan required','Run the HST archive sweep and collect its results first.');return
+        token=simpledialog.askstring('NASA ADS literature search',
+            'Paste your NASA ADS API token. It is used only for this run and is not saved or sent to worker PCs.',
+            show='*',parent=self)
+        if not token:return
+        self.run([command('literature_search','--input',source,
+                          '--out',results/'spacecatalog_hst.literature.jsonl',
+                          '--cache',root/'.cache'/'ads-literature')],
+                 extra_env={'HUBBLE_ADS_TOKEN':token.strip()})
     def seed(self):
         path = filedialog.askopenfilename(title='Select catalog JSONL', filetypes=[('JSON Lines', '*.jsonl')])
         if path: self.run([command('coordinator', '--db', self.workspace_path() / 'queue.sqlite', 'seed', '--catalog', path)])

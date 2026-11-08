@@ -61,6 +61,21 @@ in `spacecatalog_hst.papers.csv`. Open their ADS links and check the actual targ
 datasets used. `target_papers.csv` is a shortcut for cases where a catalog name occurs
 in a linked paper title.
 
+To search the broader astronomy literature by the matched targets' catalog names,
+choose **Scan → Search object literature in ADS**. Get an API token from your
+[NASA ADS account settings](https://ui.adsabs.harvard.edu/user/settings/token), then
+paste it into the prompt. The token is used only for that run and is not saved or
+sent to worker PCs. The search checks ADS object tags (SIMBAD/NED) and indexed paper
+text for each name/alias. It resumes from its local cache and checkpoints results.
+Outputs are `spacecatalog_hst.literature.jsonl` and
+`spacecatalog_hst.literature.papers.csv` in the results folder. `papers_found` means
+ADS found name/object-tag matches worth checking; `no_name_match` means this query
+found none. Neither status proves that the target was or was not studied: names can
+be ambiguous, papers can use other designations, and ADS coverage is incomplete.
+Review the returned papers and their HST observations before judging whether an
+object is overlooked. The [ADS search syntax](https://adsabs.github.io/help/search/search-syntax)
+documents the `object:` and `full:` fields used here.
+
 Imported rows retain their source name, URL, license, and retrieval date. SpaceCatalog
 passes through upstream licensing terms, so consult the per-row source fields before
 redistributing catalog data or results.
