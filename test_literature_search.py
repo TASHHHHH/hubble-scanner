@@ -1,8 +1,9 @@
 import json
 import tempfile
+import time
 import unittest
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock,patch
 
 from runtime import read_rows,write_rows
 from literature_search import make_query,names_for,run,search_ads
@@ -49,6 +50,19 @@ class LiteratureSearchTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, self.assertRaisesRegex(RuntimeError,'Syntax error near field group'):
             search_ads('bad query','secret',tmp,session)
         self.assertEqual(session.get.call_count,1)
+
+    def test_rate_limit_waits_until_ads_reset_and_retries_same_target(self):
+        session=Mock();limited=Mock();limited.status_code=429
+        limited.headers={'X-RateLimit-Reset':'1005'}
+        success=Mock();success.status_code=200
+        success.json.return_value={'response':{'numFound':0,'docs':[]}}
+        session.get.side_effect=[limited,success]
+        with tempfile.TemporaryDirectory() as tmp, patch('literature_search.time.time',return_value=1000), \
+                patch('literature_search.time.sleep') as sleep:
+            result=search_ads('database:astronomy AND full:"HIP 23692"','secret',tmp,session)
+        self.assertEqual(result['docs'],[])
+        self.assertEqual(session.get.call_count,2)
+        sleep.assert_called_once_with(7.0)
 
     def test_run_distinguishes_papers_no_match_and_lookup_failure(self):
         session=Mock()

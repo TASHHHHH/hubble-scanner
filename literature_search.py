@@ -68,13 +68,28 @@ def search_ads(query, token, cache_dir, session=None, rows=25, retries=3):
              'User-Agent':'HubbleScanner/1.0 object literature crosscheck'}
     params={'q':query,'fl':FIELDS,'rows':rows,'start':0,'sort':'score desc'}
     last_error='ADS lookup failed'
-    for attempt in range(retries):
+    failures=0;max_failures=max(1,retries)
+    while failures<max_failures:
         try:
             response=session.get(ADS_URL,headers=headers,params=params,timeout=45)
             if response.status_code in (401,403):
                 raise RuntimeError('ADS rejected the API token (HTTP '+str(response.status_code)+'). Check the token and retry.')
             if response.status_code==429:
-                raise RuntimeError('ADS rate limit reached (HTTP 429); wait before resuming.')
+                response_headers=getattr(response,'headers',{}) or {}
+                reset=response_headers.get('X-RateLimit-Reset')
+                retry_after=response_headers.get('Retry-After')
+                try:
+                    wait=max(1.0,float(reset)-time.time()+2.0) if reset else max(1.0,float(retry_after))
+                except (TypeError,ValueError):
+                    raise RuntimeError('ADS rate limit reached (HTTP 429) without a usable reset time; retry later.')
+                reset_text=(time.strftime('%Y-%m-%d %H:%M:%S UTC',time.gmtime(float(reset)))
+                            if reset else 'after the server retry interval')
+                print(f'ADS daily limit reached; pausing until {reset_text}.',flush=True)
+                # ADS reports its daily reset in X-RateLimit-Reset (UTC epoch).
+                # Do not consume a failure retry: keep the single target pending
+                # and resume it after quota resets.
+                time.sleep(min(wait,24*60*60))
+                continue
             if response.status_code>=400:
                 try:
                     body=response.json()
@@ -90,8 +105,9 @@ def search_ads(query, token, cache_dir, session=None, rows=25, retries=3):
                 last_error=f'ADS HTTP {response.status_code}'+(f': {detail}' if detail else '')
                 if response.status_code<500 and response.status_code!=408:
                     raise RuntimeError('ADS rejected the search request. '+last_error)
-                if attempt+1<retries:
-                    time.sleep(min(30,2**attempt));continue
+                failures+=1
+                if failures<max_failures:
+                    time.sleep(min(30,2**(failures-1)));continue
                 raise RuntimeError(last_error)
             data=response.json()
             docs=data.get('response',{}).get('docs')
@@ -103,7 +119,8 @@ def search_ads(query, token, cache_dir, session=None, rows=25, retries=3):
         except RuntimeError: raise
         except (requests.RequestException,ValueError,KeyError,TypeError) as exc:
             last_error=type(exc).__name__
-            if attempt+1<retries: time.sleep(min(30,2**attempt))
+            failures+=1
+            if failures<max_failures: time.sleep(min(30,2**(failures-1)))
     raise RuntimeError(last_error)
 
 
