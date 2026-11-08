@@ -68,7 +68,14 @@ def search_ads(query, token, cache_dir, session=None, rows=25, retries=3):
                 raise RuntimeError('ADS rejected the API token (HTTP '+str(response.status_code)+'). Check the token and retry.')
             if response.status_code==429:
                 raise RuntimeError('ADS rate limit reached (HTTP 429); wait before resuming.')
-            response.raise_for_status()
+            if response.status_code>=400:
+                detail=' '.join(str(getattr(response,'text','')).split())[:240]
+                last_error=f'ADS HTTP {response.status_code}'+(f': {detail}' if detail else '')
+                if response.status_code<500 and response.status_code!=408:
+                    raise RuntimeError('ADS rejected the search request. '+last_error)
+                if attempt+1<retries:
+                    time.sleep(min(30,2**attempt));continue
+                raise RuntimeError(last_error)
             data=response.json()
             docs=data.get('response',{}).get('docs')
             if not isinstance(docs,list): raise RuntimeError('ADS returned an unexpected response.')
@@ -126,9 +133,11 @@ def run(input_path, out_path, token, cache_dir, delay=0.25, limit=0, session=Non
                            'ads_num_found':found['num_found'],'ads_query':query,'papers':papers})
         except RuntimeError as exc:
             result.update({'literature_status':'lookup_failed','literature_error':str(exc)})
-            if any(term in str(exc).lower() for term in ('rate limit','rejected the api token')):
-                prior[row['id']]=result
-                break
+            prior[row['id']]=result
+            print(f"ADS lookup stopped at {row.get('id')}: {exc}",flush=True)
+            # A lookup error is usually shared by the API, credentials or query
+            # builder. Checkpoint it and stop instead of issuing thousands more.
+            break
         prior[row['id']]=result
         processed+=1
         # Checkpoint after every object; existing ADS responses are cached too.

@@ -16,7 +16,7 @@ class LiteratureSearchTests(unittest.TestCase):
         self.assertIn('full:"Andromeda Galaxy"',query)
 
     def test_api_result_is_cached_and_normalized_to_paper_details(self):
-        session=Mock();response=Mock();response.raise_for_status.return_value=None
+        session=Mock();response=Mock();response.status_code=200;response.raise_for_status.return_value=None
         response.json.return_value={'response':{'numFound':1,'docs':[{
             'bibcode':'2025ApJ...123..456A','title':['A title'],'author':['A. Author'],
             'pubdate':'2025-01','pub':'ApJ','doi':['10.1234/example'],
@@ -35,14 +35,17 @@ class LiteratureSearchTests(unittest.TestCase):
             query=kwargs['params']['q']
             response=Mock()
             if 'NGC 1' in query:
+                response.status_code=200
                 response.raise_for_status.return_value=None
                 response.json.return_value={'response':{'numFound':1,'docs':[{
                     'bibcode':'2025ApJ...123..456A','title':['NGC 1 study'],
                     'author':['A. Author'],'pubdate':'2025-01','pub':'ApJ'}]}}
             elif 'NGC 2' in query:
+                response.status_code=200
                 response.raise_for_status.return_value=None
                 response.json.return_value={'response':{'numFound':0,'docs':[]}}
             else:
+                response.status_code=503;response.text='service temporarily unavailable'
                 response.raise_for_status.side_effect=RuntimeError('network down')
             return response
         session.get.side_effect=get
