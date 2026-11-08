@@ -50,6 +50,16 @@ class RunnerTests(unittest.TestCase):
             self.assertIn(('log', 'two words\n'), events)
             self.assertEqual(events[-1], ('done', 0))
 
+    def test_collect_requires_a_completed_archive_sweep(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch('coordinator.Queue') as queue_type, patch('app.messagebox.showinfo') as info:
+            queue_type.return_value.status.return_value={'counts':[]}
+            fake=SimpleNamespace(workspace_path=lambda:Path(tmp),run=unittest.mock.Mock())
+            App.collect(fake)
+            fake.run.assert_not_called()
+            info.assert_called_once()
+
 
 @unittest.skipUnless(os.name == 'nt', 'Windows desktop smoke')
 class DesktopTests(unittest.TestCase):

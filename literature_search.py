@@ -130,7 +130,11 @@ def _progress_text(checked,total,counts,leads=()):
 
 def run(input_path, out_path, token, cache_dir, delay=0.25, limit=0, session=None, notifier=None):
     if not token: raise ValueError('Set HUBBLE_ADS_TOKEN to your NASA ADS API token.')
-    rows=[r for r in read_rows(input_path) if int(r.get('mast_observation_count') or 0)>0]
+    input_rows=list(read_rows(input_path))
+    rows=[r for r in input_rows if int(r.get('mast_observation_count') or 0)>0]
+    if not rows:
+        raise ValueError(f'No archive-matched objects in {input_path}: found {len(input_rows)} catalog rows, '
+                         'but none have mast_observation_count > 0. Restore or collect valid HST archive results first.')
     out_path=Path(out_path);out_path.parent.mkdir(parents=True,exist_ok=True)
     prior={}
     if out_path.exists():

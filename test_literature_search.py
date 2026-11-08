@@ -15,6 +15,15 @@ class LiteratureSearchTests(unittest.TestCase):
         self.assertIn('object:"NGC 224"',query)
         self.assertIn('full:"Andromeda Galaxy"',query)
 
+    def test_zero_archive_matches_fails_instead_of_reporting_zero_of_zero(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source=Path(tmp)/'input.jsonl';out=Path(tmp)/'out.jsonl'
+            write_rows(source,[{'id':'NGC0001','mast_observation_count':0}])
+            out.write_text('previous checkpoint\n',encoding='utf-8')
+            with self.assertRaisesRegex(ValueError,'No archive-matched objects'):
+                run(source,out,'secret',Path(tmp)/'cache',delay=0)
+            self.assertEqual(out.read_text(encoding='utf-8'),'previous checkpoint\n')
+
     def test_api_result_is_cached_and_normalized_to_paper_details(self):
         session=Mock();response=Mock();response.status_code=200;response.raise_for_status.return_value=None
         response.json.return_value={'response':{'numFound':1,'docs':[{

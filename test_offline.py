@@ -67,6 +67,18 @@ class CatalogUnitTests(unittest.TestCase):
 
 
 class UpgradeTests(unittest.TestCase):
+    def test_empty_archive_export_refuses_to_overwrite_previous_scan(self):
+        from archive_sweep import scan
+        from runtime import write_rows
+        target={'id':'NGC9999','ra_deg':10,'dec_deg':20,'major_arcmin':1}
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);observations=root/'archive_observations.jsonl'
+            write_rows(observations,[])
+            out=root/'spacecatalog_hst.jsonl';out.write_text('previous valid scan\n',encoding='utf-8')
+            with self.assertRaisesRegex(RuntimeError,'refusing to overwrite'):
+                scan([target],out,root/'cache',observations)
+            self.assertEqual(out.read_text(encoding='utf-8'),'previous valid scan\n')
+
     def test_mast_crossmatch_uses_footprints_and_program_bibliography(self):
         from archive_sweep import scan
         target={'id':'NGC9999','ra_deg':10,'dec_deg':20,'major_arcmin':1,'source':'fixture',

@@ -127,8 +127,12 @@ def scan(objects,out,cache_dir,observations_file=None):
     if observations_file:
         observations=[r for r in __import__('runtime').read_rows(observations_file)]
     else: observations=fetch_archive(cache_dir)
+    if not observations:
+        raise RuntimeError('No HST archive observations were collected; refusing to overwrite archive results.')
     observations=[r for r in observations if r.get('s_region') and
                   r.get('s_ra') not in (None,'') and r.get('s_dec') not in (None,'')]
+    if not observations:
+        raise RuntimeError('Collected HST observations contain no usable footprints; refusing to overwrite archive results.')
     ra=np.array([float(r['s_ra']) for r in observations]);dec=np.array([float(r['s_dec']) for r in observations])
     coords=SkyCoord(ra*u.deg,dec*u.deg)
     xyz=np.column_stack((np.cos(coords.dec.rad)*np.cos(coords.ra.rad),

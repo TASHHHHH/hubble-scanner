@@ -395,7 +395,11 @@ class App(tk.Tk):
         from coordinator import Queue
         status=Queue(self.workspace_path()/'queue.sqlite').status()
         bands=[row for row in status['counts'] if row['stage']=='archive_band']
-        if bands and (len(bands)!=1 or bands[0]['state']!='done' or bands[0]['count']!=72):
+        if not bands:
+            messagebox.showinfo('Archive sweep required',
+                'No HST archive sweep is queued. Choose Search SpaceCatalog in MAST and wait for all 72 bands before collecting.')
+            return
+        if len(bands)!=1 or bands[0]['state']!='done' or bands[0]['count']!=72:
             messagebox.showinfo('Archive sweep still running',
                 'Wait for all 72 archive-band jobs to finish before collecting. Check the queue status and reconnect workers if jobs are held.')
             return
