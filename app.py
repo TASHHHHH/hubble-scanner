@@ -143,6 +143,7 @@ class App(tk.Tk):
             ('Try offline demo', 'Synthetic catalog, three FITS bands and sample results. No API calls.', self.demo),
             ('Build catalog', 'Build the Messier, NGC and IC input list with the selected catalog coverage.', self.catalog),
             ('Search SpaceCatalog in MAST', 'Match public Hubble images and check linked STScI papers by proposal; review object-level matches.', self.archive_sweep),
+            ('Test ADS search (1 object)', 'Check ADS access on one archive-matched object before the full search.', self.test_literature),
             ('Search object literature in ADS', 'Search astronomy papers for the names of archive-matched objects; review every hit.', self.search_literature),
             ('Queue no-paper targets for PC review', 'Send archive matches with no linked science paper to connected PCs for preview and filter review.', self.archive_review_queue),
             ('Import catalog & seed queue', 'Choose JSONL from a previous run. Known aliases and identical queries are deduplicated.', self.seed),
@@ -284,6 +285,10 @@ class App(tk.Tk):
         self.run([command('coordinator','--db',root/'queue.sqlite','archive-review-seed',
                           '--results',result)])
     def search_literature(self):
+        self._start_literature_search(limit=0)
+    def test_literature(self):
+        self._start_literature_search(limit=1)
+    def _start_literature_search(self,limit):
         root=self.workspace_path();results=root/'results'
         source=results/'spacecatalog_hst.jsonl'
         if not source.exists():
@@ -292,9 +297,10 @@ class App(tk.Tk):
             'Paste your NASA ADS API token. It is used only for this run and is not saved or sent to worker PCs.',
             show='*',parent=self)
         if not token:return
-        self.run([command('literature_search','--input',source,
-                          '--out',results/'spacecatalog_hst.literature.jsonl',
-                          '--cache',root/'.cache'/'ads-literature')],
+        args=['--input',source,'--out',results/'spacecatalog_hst.literature.jsonl',
+              '--cache',root/'.cache'/'ads-literature']
+        if limit: args.extend(['--limit',str(limit)])
+        self.run([command('literature_search',*args)],
                  extra_env={'HUBBLE_ADS_TOKEN':token.strip()})
     def seed(self):
         path = filedialog.askopenfilename(title='Select catalog JSONL', filetypes=[('JSON Lines', '*.jsonl')])
