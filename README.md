@@ -64,8 +64,9 @@ in a linked paper title.
 To search the broader astronomy literature by the matched targets' catalog names,
 choose **Scan → Search object literature in ADS**. Get an API token from your
 [NASA ADS account settings](https://ui.adsabs.harvard.edu/user/settings/token), then
-paste it into the prompt. The token is used only for that run and is not saved or
-sent to worker PCs. The ADS API search checks indexed full text for each name/alias.
+paste it into the prompt. The token is saved encrypted with Windows current-user
+DPAPI on this PC for future searches; it is never sent to worker PCs. Use **Forget
+saved ADS token** to remove it. The ADS API search checks indexed full text for each name/alias.
 It resumes from its local cache and checkpoints results.
 Outputs are `spacecatalog_hst.literature.jsonl` and
 `spacecatalog_hst.literature.papers.csv` in the results folder. `papers_found` means

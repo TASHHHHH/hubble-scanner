@@ -152,6 +152,7 @@ class App(tk.Tk):
             row = ttk.Frame(f); row.pack(fill='x', pady=5)
             ttk.Button(row, text=title, width=28, command=callback).pack(side='left')
             ttk.Label(row, text=description, wraplength=650).pack(side='left', padx=18)
+        ttk.Button(f,text='Forget saved ADS token',command=self.forget_ads_token).pack(anchor='w',pady=(8,0))
         self.wide = tk.BooleanVar(value=True)
         ttk.Checkbutton(f, text='Expanded catalogs (HH, Barnard, Lynds, Arp, Sharpless, clusters and more)', variable=self.wide).pack(anchor='w', pady=8)
 
@@ -288,15 +289,37 @@ class App(tk.Tk):
         self._start_literature_search(limit=0)
     def test_literature(self):
         self._start_literature_search(limit=1)
+    def forget_ads_token(self):
+        from secret_store import delete_ads_token,load_ads_token
+        try: saved=load_ads_token()
+        except Exception as exc:
+            messagebox.showerror('ADS token storage',f'Could not read the encrypted token: {exc}',parent=self);return
+        if saved is None:
+            messagebox.showinfo('ADS token storage','No saved ADS token on this PC.',parent=self);return
+        if messagebox.askyesno('Forget ADS token','Remove the encrypted NASA ADS token saved for this Windows user?',parent=self):
+            try:
+                delete_ads_token()
+                messagebox.showinfo('ADS token storage','Saved ADS token removed.',parent=self)
+            except OSError as exc:
+                messagebox.showerror('ADS token storage',f'Could not remove the token: {exc}',parent=self)
     def _start_literature_search(self,limit):
         root=self.workspace_path();results=root/'results'
         source=results/'spacecatalog_hst.jsonl'
         if not source.exists():
             messagebox.showinfo('Archive scan required','Run the HST archive sweep and collect its results first.');return
+        from secret_store import load_ads_token,save_ads_token
+        try: saved_token=load_ads_token()
+        except Exception:
+            saved_token=None
         token=simpledialog.askstring('NASA ADS literature search',
-            'Paste your NASA ADS API token. It is used only for this run and is not saved or sent to worker PCs.',
-            show='*',parent=self)
+            'Paste your NASA ADS API token. It will be encrypted for this Windows user on this PC so future searches can reuse it. It is never sent to worker PCs. Use “Forget saved ADS token” to remove it.',
+            initialvalue=saved_token or '',show='*',parent=self)
         if not token:return
+        try:save_ads_token(token)
+        except Exception as exc:
+            if not messagebox.askyesno('Could not save ADS token',
+                    f'Windows could not encrypt and save the token ({exc}). Run this search once without saving it?',parent=self):
+                return
         args=['--input',source,'--out',results/'spacecatalog_hst.literature.jsonl',
               '--cache',root/'.cache'/'ads-literature']
         if limit: args.extend(['--limit',str(limit)])

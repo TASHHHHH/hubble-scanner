@@ -80,3 +80,12 @@ class LevelsTests(unittest.TestCase):
             self.assertEqual(load(p)['token'],'test-private-token')
             data=bytearray(p.read_bytes());data[-1]^=1;p.write_bytes(data)
             with self.assertRaises(OSError):load(p)
+
+    @unittest.skipUnless(os.name=='nt','Windows DPAPI')
+    def test_ads_token_dpapi_storage_roundtrip_and_removal(self):
+        from secret_store import save_ads_token,load_ads_token,delete_ads_token
+        with tempfile.TemporaryDirectory() as tmp:
+            p=Path(tmp)/'ads-token.dpapi';save_ads_token('private-ads-token',p)
+            self.assertNotIn(b'private-ads-token',p.read_bytes())
+            self.assertEqual(load_ads_token(p),'private-ads-token')
+            delete_ads_token(p);self.assertIsNone(load_ads_token(p))

@@ -10,6 +10,10 @@ def location():
     return Path(os.environ.get('LOCALAPPDATA',Path.home()))/'HubbleScanner'/'telegram.dpapi'
 
 
+def ads_token_location():
+    return Path(os.environ.get('LOCALAPPDATA',Path.home()))/'HubbleScanner'/'ads-token.dpapi'
+
+
 def transform(data,decrypt=False):
     if os.name!='nt':raise RuntimeError('Encrypted notifications require Windows DPAPI')
     class Blob(ctypes.Structure):
@@ -38,6 +42,25 @@ def load(path=None):
     p=Path(path) if path else location()
     if not p.exists():return None
     return json.loads(transform(p.read_bytes(),decrypt=True))
+
+
+def save_ads_token(token,path=None):
+    """Store the ADS API token encrypted for this Windows user only."""
+    if not token or not token.strip():raise ValueError('ADS token is required')
+    p=Path(path) if path else ads_token_location();p.parent.mkdir(parents=True,exist_ok=True)
+    blob=transform(token.strip().encode('utf-8'))
+    tmp=p.with_suffix('.tmp');tmp.write_bytes(blob);os.replace(tmp,p)
+
+
+def load_ads_token(path=None):
+    p=Path(path) if path else ads_token_location()
+    if not p.exists():return None
+    return transform(p.read_bytes(),decrypt=True).decode('utf-8')
+
+
+def delete_ads_token(path=None):
+    p=Path(path) if path else ads_token_location()
+    p.unlink(missing_ok=True)
 
 
 if __name__=='__main__':
