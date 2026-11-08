@@ -9,11 +9,11 @@ from literature_search import make_query,names_for,run,search_ads
 
 
 class LiteratureSearchTests(unittest.TestCase):
-    def test_query_uses_ads_object_tags_and_exact_text_aliases(self):
+    def test_query_uses_ads_api_supported_full_text_field(self):
         query=make_query(['NGC 224','Andromeda Galaxy'])
         self.assertIn('database:astronomy',query)
-        self.assertIn('object:("NGC 224" OR "Andromeda Galaxy")',query)
         self.assertIn('full:("NGC 224" OR "Andromeda Galaxy")',query)
+        self.assertNotIn('object:',query)
 
     def test_search_names_exclude_catalog_source_and_internal_id(self):
         self.assertEqual(names_for({'wiki_titles':['HIP 23692'],'aliases':['HD 123'],
@@ -36,8 +36,8 @@ class LiteratureSearchTests(unittest.TestCase):
             'abstract':['A short abstract'],'property':['refereed']}]}}
         session.get.return_value=response
         with tempfile.TemporaryDirectory() as tmp:
-            result=search_ads('database:astronomy AND object:"NGC 224"','secret',tmp,session)
-            again=search_ads('database:astronomy AND object:"NGC 224"','secret',tmp,session)
+            result=search_ads('database:astronomy AND full:"NGC 224"','secret',tmp,session)
+            again=search_ads('database:astronomy AND full:"NGC 224"','secret',tmp,session)
         self.assertEqual(result,again)
         self.assertEqual(session.get.call_count,1)
         self.assertEqual(result['docs'][0]['bibcode'],'2025ApJ...123..456A')

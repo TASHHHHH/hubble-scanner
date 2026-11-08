@@ -65,16 +65,17 @@ To search the broader astronomy literature by the matched targets' catalog names
 choose **Scan → Search object literature in ADS**. Get an API token from your
 [NASA ADS account settings](https://ui.adsabs.harvard.edu/user/settings/token), then
 paste it into the prompt. The token is used only for that run and is not saved or
-sent to worker PCs. The search checks ADS object tags (SIMBAD/NED) and indexed paper
-text for each name/alias. It resumes from its local cache and checkpoints results.
+sent to worker PCs. The ADS API search checks indexed full text for each name/alias.
+It resumes from its local cache and checkpoints results.
 Outputs are `spacecatalog_hst.literature.jsonl` and
 `spacecatalog_hst.literature.papers.csv` in the results folder. `papers_found` means
-ADS found name/object-tag matches worth checking; `no_name_match` means this query
+ADS found full-text name matches worth checking; `no_name_match` means this query
 found none. Neither status proves that the target was or was not studied: names can
 be ambiguous, papers can use other designations, and ADS coverage is incomplete.
 Review the returned papers and their HST observations before judging whether an
 object is overlooked. The [ADS search syntax](https://adsabs.github.io/help/search/search-syntax)
-documents the `object:` and `full:` fields used here.
+documents the full-text field. `object:` is available in the web search UI but
+rejected by the API query endpoint used by this app.
 When Telegram is configured on the same Windows user account under **Workers →
 Encrypted Telegram settings**, ADS search sends a summary every ten objects, including
 paper matches, no-name matches, lookup errors, and potential review leads where both

@@ -42,7 +42,11 @@ def make_query(names):
         phrases.append('"'+phrase+'"')
     if not phrases: raise ValueError('Target has no searchable names')
     alternatives=' OR '.join(phrases)
-    return f'database:astronomy AND (object:({alternatives}) OR full:({alternatives}))'
+    # `object:` works in the ADS web UI but is not an indexed query field in
+    # the ADS API's Solr schema (HTTP 400: undefined field object). Search the
+    # API's supported `full:` index, which covers title, abstract, body,
+    # acknowledgements and keywords.
+    return f'database:astronomy AND full:({alternatives})'
 
 
 def _cache_path(cache_dir, query):
