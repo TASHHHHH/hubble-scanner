@@ -166,3 +166,10 @@ implement research stages. Long-running work stays off the GUI thread.
 - [Contributing](CONTRIBUTING.md)
 - [Security](SECURITY.md)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)
+
+## Alias and publication audit
+
+Use `python scanner.py resolve-aliases --input candidate_list.csv --out out/aliases --supplement`
+for evidence-bearing catalog identities, then `python scanner.py audit-publications --aliases out/aliases/aliases.jsonl --out out/publications`.
+See [ALIAS_AUDIT.md](ALIAS_AUDIT.md) for schemas, resume behavior, component safeguards,
+reviewed publication evidence, and scientific limits. These commands leave the distributed queue unchanged.

@@ -464,6 +464,10 @@ def ai_rank(args):
 def main():
     p = argparse.ArgumentParser(description='Hubble Wikipedia first-pass catalog / footprint scanner')
     sub = p.add_subparsers(dest='command', required=True)
+    from alias_resolution import add_parser as add_alias_parser
+    add_alias_parser(sub)
+    from publication_audit import add_parser as add_publication_parser
+    add_publication_parser(sub)
     a = sub.add_parser('catalog'); a.add_argument('--ngc-csv'); a.add_argument('--addendum-csv')
     extension = a.add_mutually_exclusive_group()
     extension.add_argument('--wide', action='store_true', help='Add the bundled SIMBAD designations, including Herbig-Haro objects')
