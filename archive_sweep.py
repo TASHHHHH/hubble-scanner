@@ -1,6 +1,7 @@
 """Crossmatch named catalog positions against the public HST image archive."""
 import argparse
 import csv
+from collections import Counter
 import hashlib
 import io
 import json
@@ -154,11 +155,18 @@ def scan(objects,out,cache_dir,observations_file=None):
             if region is not None and region.covers(__import__('shapely.geometry',fromlist=['Point']).Point(0,0)):
                 hits.append(observations[i])
         filters=sorted({f.strip() for o in hits for f in o.get('filters','').replace(',', ';').split(';') if f.strip()})
+        target_counts=Counter(' '.join(str(o.get('target_name') or '').split()) for o in hits
+                              if str(o.get('target_name') or '').strip()
+                              and str(o.get('target_name') or '').strip().upper() not in
+                              {'ANY','UNKNOWN','N/A','NA','NONE','NULL','-'}
+                              and 'DITHER' not in str(o.get('target_name') or '').upper())
+        mast_target_names=[name for name,_ in sorted(target_counts.items(),key=lambda item:(-item[1],item[0]))]
         programs=sorted({str(o.get('proposal_id','')).strip().upper() for o in hits
                          if str(o.get('proposal_id','')).strip()
                          and str(o.get('proposal_id','')).strip().upper() not in {'N/A','NA','NONE','NULL','-'}})
         results.append({**obj,'mast_observation_count':len(hits),'mast_filters':filters,
              'mast_filter_count':len(filters),'mast_obsids':[o['obsid'] for o in hits],
+             'mast_target_names':mast_target_names,
              '_matched_observations':hits,
              'mast_program_ids':programs,
              'archive_status':'observed' if hits else 'no_public_image_at_center',
@@ -236,6 +244,7 @@ def scan(objects,out,cache_dir,observations_file=None):
             f.write(json.dumps(saved,ensure_ascii=False)+'\n')
     cols=['id','object_type','source','source_name','source_url','source_license','ra_deg','dec_deg',
           'mast_observation_count','mast_filter_count','mast_filters','mast_program_ids',
+          'mast_target_names',
           'mast_search_url','archive_status','publication_status','program_paper_count',
           'object_name_in_paper_title']
     with out.with_suffix('.csv').open('w',encoding='utf-8-sig',newline='') as f:
@@ -269,7 +278,7 @@ def scan(objects,out,cache_dir,observations_file=None):
                     'publication_date':paper.get('publication_date',''),'journal':paper.get('journal',''),
                     'ads_url':paper.get('ads_url','')})
     review_cols=['id','object_name','object_type','source','source_name','source_url','source_license',
-                 'ra_deg','dec_deg','mast_observation_count','mast_filters','mast_program_ids',
+                 'ra_deg','dec_deg','mast_observation_count','mast_filters','mast_program_ids','mast_target_names',
                  'publication_status','program_paper_count','object_name_in_paper_title','mast_search_url']
     with out.with_name(out.stem+'.review.csv').open('w',encoding='utf-8-sig',newline='') as f:
         writer=csv.DictWriter(f,fieldnames=review_cols);writer.writeheader()
@@ -278,7 +287,7 @@ def scan(objects,out,cache_dir,observations_file=None):
                 values={**row,'object_name':(row.get('wiki_titles') or row.get('aliases') or [''])[0]}
                 writer.writerow({k:json.dumps(values.get(k),ensure_ascii=False) if isinstance(values.get(k),list)
                                  else values.get(k,'') for k in review_cols})
-    observation_cols=['object_id','object_name','ra_deg','dec_deg','obsid','obs_id','program_id',
+    observation_cols=['object_id','object_name','ra_deg','dec_deg','obsid','obs_id','target_name','program_id',
                       'filters','instrument_name','t_exptime','mast_search_url']
     with out.with_name(out.stem+'.observations.csv').open('w',encoding='utf-8-sig',newline='') as f:
         writer=csv.DictWriter(f,fieldnames=observation_cols);writer.writeheader()
@@ -288,6 +297,7 @@ def scan(objects,out,cache_dir,observations_file=None):
                 writer.writerow({'object_id':row.get('id',''),'object_name':object_name,
                     'ra_deg':row.get('ra_deg',''),'dec_deg':row.get('dec_deg',''),
                     'obsid':observation.get('obsid',''),'obs_id':observation.get('obs_id',''),
+                    'target_name':observation.get('target_name',''),
                     'program_id':observation.get('proposal_id',''),'filters':observation.get('filters',''),
                     'instrument_name':observation.get('instrument_name',''),
                     't_exptime':observation.get('t_exptime',''),'mast_search_url':row['mast_search_url']})

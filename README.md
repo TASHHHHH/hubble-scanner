@@ -67,7 +67,10 @@ choose **Scan → Search object literature in ADS**. Get an API token from your
 paste it into the prompt. The token is saved encrypted with Windows current-user
 DPAPI on this PC for future searches; it is never sent to worker PCs. Use **Forget
 saved ADS token** to remove it. The ADS API search checks indexed full text for each name/alias.
-It resumes from its local cache and checkpoints results.
+It resumes from its local cache and checkpoints results. The archive export preserves MAST
+target labels for matched observations; ADS queries include up to two alongside catalog
+names. MAST labels are search clues, not verified aliases, because a footprint can cover
+a field target and nearby catalog objects.
 Outputs are `spacecatalog_hst.literature.jsonl` and
 `spacecatalog_hst.literature.papers.csv` in the results folder. `papers_found` means
 ADS found full-text name matches worth checking; `no_name_match` means this query
@@ -123,7 +126,9 @@ the publication finding remains a proposal-level hint for manual paper review.
 Outside PCs require HTTPS and individual revocable credentials. Existing wiki-only
 Telegram commands on the coordinator support live queue/worker status, HST obsid
 lookups, starting/collecting the archive sweep, pausing/resuming new claims, and
-adjusting investigator concurrency. Send `/help` to the configured bot chat.
+adjusting investigator concurrency. `/nomatches` lists every completed ADS target
+with no name hit; this is a literature-search result, not proof an object is unpublished.
+Send `/help` to the configured bot chat.
 tokens remain restricted until reissued. Update every PC before starting this mode.
 
 ## Research limits

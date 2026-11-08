@@ -42,6 +42,38 @@ class TelegramControlTests(unittest.TestCase):
         self.assertIn('belongs to NGC1',handle_command(self.q,{},'/obsid hst_12345'))
         self.assertIn('12345',handle_command(self.q,{},'/recent'))
 
+    def test_nomatches_sends_every_name_in_telegram_sized_chunks(self):
+        import json
+        out=Path(self.temp.name)/'results';out.mkdir()
+        path=out/'spacecatalog_hst.literature.jsonl'
+        rows=[{'id':f'SC-{i:04d}','search_names':[f'Object {i:04d}'],
+               'literature_status':'no_name_match'} for i in range(240)]
+        rows += [{'id':'known','search_names':['Known object'],'literature_status':'papers_found'}]
+        path.write_text(''.join(json.dumps(row)+'\n' for row in rows),encoding='utf-8')
+        sent=[]
+        self.assertIsNone(handle_command(self.q,{},'/nomatches',reply=sent.append))
+        combined='\n'.join(sent)
+        self.assertEqual(len(sent),2)
+        self.assertIn('Objects with no ADS name match: 240',sent[0])
+        for i in range(240):self.assertIn(f'Object {i:04d} (SC-{i:04d})',combined)
+        self.assertNotIn('Known object',combined)
+        self.assertTrue(all(len(message)<=3900 for message in sent))
+        self.assertIn('Missing aliases can cause false misses',sent[-1])
+
+    def test_nonmatchesall_prefers_catalog_name_and_includes_searched_aliases(self):
+        import json
+        out=Path(self.temp.name)/'results';out.mkdir()
+        path=out/'spacecatalog_hst.literature.jsonl'
+        row={'id':'SC-target','wiki_titles':['NGC 123'],'aliases':['Other alias'],
+             'mast_target_names':['SN 2024abc'],'search_names':['Other alias','SN 2024abc'],
+             'literature_status':'no_name_match'}
+        path.write_text(json.dumps(row)+'\n',encoding='utf-8')
+        sent=[]
+        self.assertIsNone(handle_command(self.q,{},'/nonmatchesall',reply=sent.append))
+        self.assertEqual(len(sent),1)
+        self.assertIn('NGC 123 (SC-target)',sent[0])
+        self.assertIn('ADS terms: SN 2024abc, Other alias',sent[0])
+
     def test_only_configured_private_chat_can_control(self):
         credentials={'chat':'8100371339'}
         allowed={'chat':{'id':8100371339,'type':'private'},'from':{'id':8100371339}}

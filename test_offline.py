@@ -106,6 +106,7 @@ class UpgradeTests(unittest.TestCase):
             with observations_csv.open(encoding='utf-8-sig',newline='') as stream:
                 observation_rows=list(csv.DictReader(stream))
         self.assertEqual(rows[0]['mast_filters'],['F606W','F814W'])
+        self.assertEqual(rows[0]['mast_target_names'],['NGC9999'])
         self.assertEqual(rows[0]['publication_status'],'program_has_published_science_paper')
         self.assertTrue(rows[0]['object_name_in_paper_title'])
         self.assertEqual(rows[0]['program_bibcodes'],['2025ApJ...123..456A'])
@@ -116,8 +117,10 @@ class UpgradeTests(unittest.TestCase):
         self.assertEqual(target_papers[0]['object_id'],'NGC9999')
         self.assertEqual(len(review_rows),1)
         self.assertEqual(review_rows[0]['mast_program_ids'],'["10152"]')
+        self.assertEqual(review_rows[0]['mast_target_names'],'["NGC9999"]')
         self.assertEqual(len(observation_rows),1)
         self.assertEqual(observation_rows[0]['obsid'],'42')
+        self.assertEqual(observation_rows[0]['target_name'],'NGC9999')
 
     def test_all_sky_crossmatch_keeps_zero_ra_and_declination(self):
         from archive_sweep import scan

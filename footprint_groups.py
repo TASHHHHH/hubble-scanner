@@ -28,7 +28,7 @@ def angular_wavelength_nm(filt):
     n = int(m.group(1))
     infrared = {'F098M','F105W','F110W','F110M','F125W','F126N','F127M',
                 'F128N','F130N','F132N','F139M','F140W','F145M','F153M',
-                'F160W','F164N','F165M','F167N','F170M','F180M','F187N',
+                'F160W','F164N','F165M','F167N','F170M','F180M','F187N','F207M',
                 'F187W','F190N','F196N','F200N','F205W','F212N','F215N',
                 'F216N','F222M','F237M'}
     if filt.upper().strip() in infrared:

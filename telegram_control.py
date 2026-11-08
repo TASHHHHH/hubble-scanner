@@ -102,6 +102,54 @@ def _recent_text(queue,limit=8):
     return '\n'.join(lines)[:3900]
 
 
+def _no_name_match_messages(queue):
+    """Format every completed ADS no-name-match object for Telegram delivery."""
+    path=Path(queue.path).parent/'results'/'spacecatalog_hst.literature.jsonl'
+    if not path.exists():return ['No ADS literature results found yet.']
+    latest={}
+    try:
+        content=path.read_bytes()
+        time.sleep(.15)
+        confirmed=path.read_bytes()
+        if confirmed!=content:content=confirmed
+        for line in content.decode('utf-8',errors='ignore').splitlines():
+            try:item=json.loads(line)
+            except (json.JSONDecodeError,TypeError):continue
+            if item.get('id'):
+                # The scanner appends checkpoints and can retry an object. Keep
+                # its final row so a target is listed once with its latest status.
+                latest[item['id']]=item
+    except OSError as exc:
+        return [f'Could not read ADS results: {str(exc)[:300]}']
+    rows=[]
+    for item in latest.values():
+        if item.get('literature_status')!='no_name_match':continue
+        # Keep the catalog identity first. ADS search_names may start with a
+        # temporary MAST field target, obscuring the object to review.
+        canonical=item.get('wiki_titles') or item.get('aliases') or []
+        searched=item.get('search_names') or []
+        ident=str(item.get('id','unknown'))
+        label=str(canonical[0] if canonical else (searched[0] if searched else ident))[:120]
+        extras=[]
+        extras.extend(str(x) for x in (item.get('mast_target_names') or []) if x)
+        extras.extend(str(x) for x in searched if x and str(x).casefold()!=label.casefold())
+        seen=set()
+        extras=[x for x in extras if not (x.casefold() in seen or seen.add(x.casefold()))]
+        suffix=(' | ADS terms: '+', '.join(extras[:3])[:180]) if extras else ''
+        rows.append(f"• {label} ({ident}){suffix}")
+    if not rows:return ['No objects currently have status no_name_match.']
+    header=f'Objects with no ADS name match: {len(rows)}\n'
+    footer='\nADS found no name match for the terms shown. Missing aliases can cause false misses; this is not proof the object or its HST data is unpublished.'
+    messages=[];chunk=header
+    for row in rows:
+        if len(chunk)+len(row)+len(footer)>3800:
+            messages.append(chunk.rstrip())
+            chunk='More no-name-match objects:\n'
+        chunk+=row+'\n'
+    if chunk.strip():messages.append((chunk.rstrip()+footer)[:3900])
+    return messages
+
+
 def _collect(queue,credentials,reply):
     if not _collect_lock.acquire(blocking=False):
         reply('A collection is already running.')
@@ -133,6 +181,7 @@ def handle_command(queue,credentials,text,reply=None):
         return ('Hubble Scanner controls\n/status — what is running, worker PCs, archive progress\n'
                 '/queue — stage counts\n/workers — connected/active PCs\n/recent — recent MAST results with obsids\n'
                 '/candidate ID — details, filters, instrument and obsids\n/obsid ID — find a target by observation ID\n'
+                '/nomatches or /nonmatchesall — send all completed objects with no ADS name match; long lists are split only to fit Telegram\n'
                 '/search — queue the 72-band HST sweep\n/collect — merge finished archive bands and check Papertrack\n'
                 '/pause [all|archive|wiki] — stop new claims (running tasks finish)\n'
                 '/resume [all|archive|wiki] — resume claims\n/limit N — investigator concurrency, 1–10\n/test — send a Telegram test message\n'
@@ -146,6 +195,12 @@ def handle_command(queue,credentials,text,reply=None):
         except ValueError:return 'Usage: /recent [1–20]'
         if not 1<=limit<=20:return 'Usage: /recent [1–20]'
         return _recent_text(queue,limit)
+    if command in ('nomatches','nonmatches','no_name_matches','nonmatchesall'):
+        messages=_no_name_match_messages(queue)
+        if reply:
+            for message in messages:reply(message)
+            return None
+        return messages[0] if len(messages)==1 else messages[0]+'\n(Additional results are sent as separate Telegram messages.)'
     if command=='candidate':return _candidate_text(queue,args[0]) if args else 'Usage: /candidate OBJECT_ID'
     if command=='obsid':
         if not args:return 'Usage: /obsid OBSERVATION_ID'
@@ -210,6 +265,9 @@ def poll(queue,stop):
               {'command':'recent','description':'Recent HST results and obsids'},
               {'command':'candidate','description':'Show a target’s HST evidence'},
               {'command':'obsid','description':'Look up an HST observation ID'},
+              {'command':'nomatches','description':'Send all objects with no ADS name match'},
+              {'command':'nonmatches','description':'Alias for /nomatches'},
+              {'command':'nonmatchesall','description':'Send the full no-name-match list'},
               {'command':'search','description':'Queue the all-sky HST sweep'},
               {'command':'collect','description':'Collect completed archive bands'},
               {'command':'pause','description':'Pause new worker claims'},

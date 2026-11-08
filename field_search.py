@@ -69,14 +69,15 @@ def matches(points, radius):
     for i in sorted(range(len(points)), key=lambda i: -points[i]['peak_contrast']):
         if i in used:
             continue
-        neighbors = sorted(tree.query_ball_point(vectors[i], chord),
-                           key=lambda j: np.linalg.norm(vectors[j]-vectors[i]))
-        members = {points[i]['exposure']: i}
-        for j in neighbors:
-            if j not in used:
-                members.setdefault(points[j]['exposure'], j)
+        neighbors = [j for j in tree.query_ball_point(vectors[i], chord) if j not in used]
+        # A source can produce multiple local maxima in one exposure. Collapse
+        # the whole positional cluster and keep only its strongest peak per
+        # exposure, otherwise the leftovers can be emitted as duplicate groups.
+        members = {}
+        for j in sorted(neighbors, key=lambda j: -points[j]['peak_contrast']):
+            members.setdefault(points[j]['exposure'], j)
+        used.update(neighbors)
         if len(members) >= 2:
-            used.update(members.values())
             groups.append([points[j] for j in members.values()])
     return sorted(groups, key=lambda g: (-len(g), -min(p['peak_contrast'] for p in g)))
 

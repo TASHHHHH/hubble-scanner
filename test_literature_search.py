@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import Mock,patch
 
 from runtime import read_rows,write_rows
-from literature_search import make_query,names_for,run,search_ads
+from literature_search import _is_transient_error,make_query,names_for,run,search_ads
 
 
 class LiteratureSearchTests(unittest.TestCase):
@@ -16,9 +16,21 @@ class LiteratureSearchTests(unittest.TestCase):
         self.assertIn('full:("NGC 224" OR "Andromeda Galaxy")',query)
         self.assertNotIn('object:',query)
 
+    def test_transient_ads_failures_are_resumable_but_bad_requests_are_not(self):
+        self.assertTrue(_is_transient_error('ReadTimeout'))
+        self.assertTrue(_is_transient_error('ADS HTTP 503: Service Unavailable'))
+        self.assertFalse(_is_transient_error('ADS rejected the search request. ADS HTTP 400'))
+        self.assertFalse(_is_transient_error('ADS rejected the API token (HTTP 401)'))
+
     def test_search_names_exclude_catalog_source_and_internal_id(self):
         self.assertEqual(names_for({'wiki_titles':['HIP 23692'],'aliases':['HD 123'],
             'source_name':'HYG Database v4.1','id':'SC-hip-23692'}),['HIP 23692','HD 123'])
+
+    def test_search_names_include_actual_mast_targets_and_skip_placeholders(self):
+        row={'wiki_titles':['NGC 3285B'],'aliases':['PGC 31389'],
+             'mast_target_names':['ANY','SN2023XQM','DITHER','SN2023XQM']}
+        self.assertEqual(names_for(row),['NGC 3285B','PGC 31389','SN2023XQM'])
+        self.assertEqual(names_for({'mast_target_names':['SN2023XQM']}),['SN2023XQM'])
 
     def test_zero_archive_matches_fails_instead_of_reporting_zero_of_zero(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -116,13 +128,18 @@ class LiteratureSearchTests(unittest.TestCase):
                 'mast_observation_count':1,
                 'publication_status':'no_published_science_paper_found_for_programs'}
                 for i in range(1,13)])
-            run(source,out,'secret',Path(tmp)/'cache',delay=0,session=session,notifier=messages.append)
+            with patch('literature_search.write_rows', wraps=write_rows) as checkpoint_write:
+                run(source,out,'secret',Path(tmp)/'cache',delay=0,session=session,notifier=messages.append)
+            self.assertTrue(any(call.kwargs.get('append') for call in checkpoint_write.call_args_list))
         self.assertEqual(len(messages),2)
         self.assertIn('10/12 objects checked',messages[0])
         self.assertIn('paper matches: 5',messages[0])
         self.assertIn('no name match: 5',messages[0])
-        self.assertIn('Potential manual-review leads',messages[0])
-        self.assertIn('not confirmed unpublished objects or discoveries',messages[0])
+        self.assertIn('missing aliases can cause false no-name results',messages[0])
+        self.assertIn('Manual-review leads (no Papertrack-linked program paper',messages[0])
+        self.assertIn('NGC 1 [papers_found]',messages[0])
+        self.assertIn('NGC 2 [no_name_match]',messages[0])
+        self.assertIn('not proof that HST observations were unpublished',messages[0])
         self.assertIn('12/12 objects checked',messages[1])
 
 
